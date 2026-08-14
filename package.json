@@ -1,0 +1,25 @@
+{
+  "name": "ai-agent",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nabix602/AI-Agent.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Nabix602/AI-Agent/issues"
+  },
+  "homepage": "https://github.com/Nabix602/AI-Agent#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "openai": "^7.4.0"
+  }
+}
