@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { Agent } = require('../engine/agent.js');
+
+const agent = new Agent({ provider: 'gemini', model: 'gemini-3.5-flash' });
 
 function App() {
   const { exit } = useApp();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
+  const [busy, setBusy] = useState(false);
 
   useInput((key, keyData) => {
     if (keyData.escape || (keyData.ctrl && key === 'c')) {
@@ -13,15 +20,35 @@ function App() {
     }
   });
 
-  function submit(value) {
+  async function submit(value) {
     const text = value.trim();
-    if (!text) return;
+    if (!text || busy) return;
 
     setMessages((current) => [
       ...current,
       { role: 'user', text }
     ]);
     setInput('');
+    setBusy(true);
+
+    try {
+      const result = await agent.run(text);
+
+      setMessages((current) => [
+        ...current,
+        { role: 'agent', text: result.content }
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          role: 'agent',
+          text: `Erreur: ${error.message || String(error)}`
+        }
+      ]);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return React.createElement(
@@ -107,7 +134,7 @@ function App() {
         value: input,
         onChange: setInput,
         onSubmit: submit,
-        placeholder: 'Demander quelque chose...'
+        placeholder: busy ? 'Agent en cours...' : 'Demander quelque chose...'
       })
     ),
 
