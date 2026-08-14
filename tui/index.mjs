@@ -1,5 +1,5 @@
-const React = require('react');
-const { render, Box, Text, useInput, useApp } = require('ink');
+import React from 'react';
+import { render, Box, Text, useInput, useApp } from 'ink';
 
 function App() {
   const { exit } = useApp();
@@ -16,7 +16,7 @@ function App() {
 
     React.createElement(
       Box,
-      { borderStyle: 'round', borderColor: 'gray', paddingX: 1 },
+      { borderStyle: 'round', paddingX: 1 },
       React.createElement(Text, { bold: true }, '✦ NABIX CODE'),
       React.createElement(Text, null, '    '),
       React.createElement(Text, { dimColor: true }, 'Gemini 2.5 Flash')
@@ -32,7 +32,6 @@ function App() {
           width: '25%',
           flexDirection: 'column',
           borderStyle: 'single',
-          borderColor: 'gray',
           paddingX: 1
         },
         React.createElement(Text, { bold: true }, 'PROJECT'),
@@ -54,18 +53,17 @@ function App() {
           width: '75%',
           flexDirection: 'column',
           borderStyle: 'single',
-          borderColor: 'gray',
           paddingX: 2
         },
         React.createElement(Text, { bold: true }, 'You'),
         React.createElement(Text, null, '> Prêt à travailler sur le projet.'),
         React.createElement(Text, null, ' '),
         React.createElement(Text, { bold: true }, '✦ Agent'),
-        React.createElement(Text, { dimColor: true }, '  Agent prêt.'),
+        React.createElement(Text, { dimColor: true }, ' Agent prêt.'),
         React.createElement(Text, null, ' '),
         React.createElement(
           Box,
-          { borderStyle: 'round', borderColor: 'gray', paddingX: 1 },
+          { borderStyle: 'round', paddingX: 1 },
           React.createElement(Text, null, '❯ Demander quelque chose...')
         )
       )
@@ -77,7 +75,7 @@ function App() {
       React.createElement(
         Text,
         { dimColor: true },
-        'Esc quitter  •  /model modèle  •  /tools outils  •  /skills skills'
+        'Esc quitter • /model • /tools • /skills'
       )
     )
   );
