@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="TaskFlow - Application moderne de gestion de tâches avec priorités, échéances, filtres et suivi de progression.">
+    <meta name="theme-color" content="#6366f1">
+    <title>TaskFlow - Gestion de Tâches Moderne</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand">
+                <div class="logo-icon" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                        <path d="m9 12 2 2 4-4"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>TaskFlow</h1>
+                    <p class="app-subtitle">Gérez vos projets et tâches efficacement</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="theme-toggle" class="btn-theme" aria-label="Changer le thème de couleurs">
+                    <span class="theme-icon sun" aria-hidden="true">☀️</span>
+                    <span class="theme-icon moon" aria-hidden="true">🌙</span>
+                    <span class="theme-label sr-only">Changer de thème</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-container">
+        <!-- Dashboard Overview -->
+        <section class="stats-grid" aria-label="Aperçu des statistiques">
+            <div class="stat-card">
+                <div class="stat-icon total" aria-hidden="true">📋</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-total">0</span>
+                    <span class="stat-label">Total des tâches</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon active" aria-hidden="true">⏳</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-active">0</span>
+                    <span class="stat-label">En cours</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon completed" aria-hidden="true">✅</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-completed">0</span>
+                    <span class="stat-label">Terminées</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon overdue" aria-hidden="true">⚠️</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-overdue">0</span>
+                    <span class="stat-label">En retard</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Progress Tracking -->
+        <section class="progress-section" aria-label="Progression globale">
+            <div class="progress-header">
+                <h2>Progression globale</h2>
+                <span class="progress-text" id="progress-text">0% (0/0 complétées)</span>
+            </div>
+            <div class="progress-bar-track" role="progressbar" id="progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progression de réalisation des tâches">
+                <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+            </div>
+        </section>
+
+        <div class="main-layout">
+            <!-- Task Creation Form Section -->
+            <section class="card form-card" aria-labelledby="task-form-title">
+                <h2 id="task-form-title" class="card-title">
+                    <span aria-hidden="true">➕</span> Nouvelle tâche
+                </h2>
+                <form id="task-form" novalidate>
+                    <div class="form-group">
+                        <label for="title">Titre <span class="required-star" aria-hidden="true">*</span></label>
+                        <input type="text" id="title" name="title" placeholder="Que devez-vous accomplir ?" required aria-required="true" maxlength="120">
+                        <span class="error-message" id="title-error" role="alert" aria-live="assertive"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description" placeholder="Ajouter des détails (optionnel)..." rows="3"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="priority">Priorité</label>
+                            <select id="priority" name="priority">
+                                <option value="low">🟢 Basse</option>
+                                <option value="medium" selected>🟡 Moyenne</option>
+                                <option value="high">🔴 Haute</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="deadline">Échéance</label>
+                            <input type="date" id="deadline" name="deadline">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block" id="btn-add-task">
+                        <span>Créer la tâche</span>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Task Management & List Section -->
+            <section class="card tasks-card" aria-label="Liste des tâches">
+                <div class="tasks-toolbar">
+                    <div class="search-box">
+                        <span class="search-icon" aria-hidden="true">🔍</span>
+                        <input type="search" id="search-input" placeholder="Rechercher une tâche..." aria-label="Rechercher parmi les tâches">
+                        <button type="button" id="clear-search" class="clear-btn hidden" aria-label="Effacer la recherche">✕</button>
+                    </div>
+
+                    <div class="filters-group">
+                        <div class="filter-control">
+                            <label for="filter" class="sr-only">Statut</label>
+                            <select id="filter" aria-label="Filtrer par statut">
+                                <option value="all">Toutes les tâches</option>
+                                <option value="in-progress">En cours</option>
+                                <option value="completed">Terminées</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-control">
+                            <label for="priority-filter" class="sr-only">Priorité</label>
+                            <select id="priority-filter" aria-label="Filtrer par priorité">
+                                <option value="all">Toutes priorités</option>
+                                <option value="high">Haute uniquement</option>
+                                <option value="medium">Moyenne uniquement</option>
+                                <option value="low">Basse uniquement</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-control">
+                            <label for="sort-by" class="sr-only">Trier par</label>
+                            <select id="sort-by" aria-label="Trier la liste">
+                                <option value="created-desc">Création (plus récentes)</option>
+                                <option value="deadline-asc">Échéance (plus proches)</option>
+                                <option value="priority-desc">Priorité (haute d'abord)</option>
+                                <option value="title-asc">Titre (A-Z)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="task-list" class="task-list" role="feed" aria-busy="false" aria-label="Tâches enregistrées">
+                    <div class="empty-state" role="status">
+                        <div class="empty-icon" aria-hidden="true">📝</div>
+                        <h3>Aucune tâche pour le moment</h3>
+                        <p>Remplissez le formulaire à gauche pour créer votre première tâche !</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modal d'édition de tâche -->
+    <div id="edit-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="edit-modal-title">Modifier la tâche</h2>
+                <button type="button" id="modal-close-btn" class="modal-close" aria-label="Fermer la fenêtre">✕</button>
+            </div>
+            <form id="edit-form" novalidate>
+                <input type="hidden" id="edit-id">
+                
+                <div class="form-group">
+                    <label for="edit-title">Titre <span class="required-star" aria-hidden="true">*</span></label>
+                    <input type="text" id="edit-title" required aria-required="true" maxlength="120">
+                    <span class="error-message" id="edit-title-error" role="alert" aria-live="assertive"></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-description">Description</label>
+                    <textarea id="edit-description" rows="3"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="edit-priority">Priorité</label>
+                        <select id="edit-priority">
+                            <option value="low">🟢 Basse</option>
+                            <option value="medium">🟡 Moyenne</option>
+                            <option value="high">🔴 Haute</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-deadline">Échéance</label>
+                        <input type="date" id="edit-deadline">
+                    </div>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label" for="edit-completed">
+                        <input type="checkbox" id="edit-completed">
+                        <span>Marquer comme terminée</span>
+                    </label>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" id="modal-cancel-btn" class="btn btn-secondary">Annuler</button>
+                    <button type="submit" class="btn btn-primary">Enregistrer les modifications</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de confirmation de suppression -->
+    <div id="delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+        <div class="modal-content modal-content-sm">
+            <div class="modal-header">
+                <h2 id="delete-modal-title">Confirmer la suppression</h2>
+                <button type="button" id="delete-modal-close" class="modal-close" aria-label="Fermer">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>Êtes-vous sûr de vouloir supprimer cette tâche ? Cette action est irréversible.</p>
+                <p id="delete-task-title-preview" class="delete-task-preview"></p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="delete-cancel-btn" class="btn btn-secondary">Annuler</button>
+                <button type="button" id="delete-confirm-btn" class="btn btn-danger">Supprimer</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="app-footer">
+        <p>TaskFlow &copy; 2026 - Application de gestion de tâches performante et accessible.</p>
+    </footer>
+
+    <script src="main.js"></script>
+</body>
+</html>

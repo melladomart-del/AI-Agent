@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nabix Code</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">✦</span>
+        <span>Nabix Code</span>
+      </div>
+
+      <button class="new-chat">+ New task</button>
+
+      <nav>
+        <div class="nav-section">
+          <span>WORKSPACE</span>
+          <button>⌂ Overview</button>
+          <button>▣ Files</button>
+        </div>
+
+        <div class="nav-section">
+          <span>AGENT</span>
+          <button>◈ Tools</button>
+          <button>✧ Skills</button>
+          <button>⌘ Connections</button>
+        </div>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <button>⚙ Settings</button>
+        <div class="status">
+          <span class="status-dot"></span>
+          Agent ready
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="project">
+          <span>AI-Agent</span>
+          <span class="muted">/</span>
+          <span class="muted">Workspace</span>
+        </div>
+
+        <div class="model-selector">
+          <span class="model-dot"></span>
+          Gemini
+          <span class="muted">⌄</span>
+        </div>
+      </header>
+
+      <section class="chat">
+        <div class="welcome">
+          <div class="welcome-icon">✦</div>
+          <h1>What are we building?</h1>
+          <p>Ask your coding agent to build, modify, debug or deploy anything.</p>
+
+          <div class="suggestions">
+            <button>Build a landing page</button>
+            <button>Analyze this project</button>
+            <button>Fix my code</button>
+            <button>Run the tests</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="composer-wrap">
+        <div class="composer">
+          <textarea placeholder="Ask Nabix Code to build something..."></textarea>
+
+          <div class="composer-bottom">
+            <div class="composer-tools">
+              <button>＋</button>
+              <button>⌘ Tools</button>
+              <button>✧ Skills</button>
+            </div>
+
+            <button class="send">↑</button>
+          </div>
+        </div>
+
+        <div class="hint">
+          Nabix Code can read files, run commands, use tools and work autonomously.
+        </div>
+      </div>
+    </main>
+
+    <aside class="activity">
+      <div class="activity-header">
+        <span>Agent</span>
+        <span class="live">● Ready</span>
+      </div>
+
+      <div class="activity-content">
+        <div class="activity-title">Activity</div>
+
+        <div class="activity-empty">
+          <span>✦</span>
+          <p>Agent activity will appear here while it works.</p>
+        </div>
+      </div>
+
+      <div class="agent-info">
+        <div>
+          <span>Model</span>
+          <strong>Gemini</strong>
+        </div>
+        <div>
+          <span>Tools</span>
+          <strong>7 enabled</strong>
+        </div>
+        <div>
+          <span>Skills</span>
+          <strong>36 loaded</strong>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

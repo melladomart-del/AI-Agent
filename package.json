@@ -20,7 +20,9 @@
   "homepage": "https://github.com/Nabix602/AI-Agent#readme",
   "dependencies": {
     "dotenv": "^17.4.2",
-    "openai": "^7.4.0"
+    "ink": "^7.1.1",
+    "openai": "^7.4.0",
+    "react": "^19.2.8"
   },
   "devDependencies": {
     "netlify-cli": "^27.1.1"
