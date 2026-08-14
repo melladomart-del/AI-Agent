@@ -4,7 +4,14 @@ const { readFile } = require('./tools/readFile');
 const { writeFile } = require('./tools/writeFile');
 const { runCommand } = require('./tools/runCommand');
 const { gitCommit } = require('./tools/gitCommit');
+const { searchCode } = require('./tools/searchCode');
 
+const fs = require('fs');
+function loadSkills() {
+  const dir = './skills';
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
+  return files.map(f => fs.readFileSync(dir + '/' + f, 'utf-8')).join('\n\n');
+}
 const client = new OpenAI({
   apiKey: process.env.OPENROUTER_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -65,12 +72,25 @@ const gitCommitTool = {
   },
 };
 tools.push(gitCommitTool);
+tools.push({
+  type: 'function',
+  function: {
+    name: 'searchCode',
+    description: 'Recherche un texte dans tous les fichiers de code du projet',
+    parameters: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Texte a rechercher' } },
+      required: ['query'],
+    },
+  },
+});
 
 function callTool(name, args) {
   if (name === 'readFile') return readFile(args.path);
   if (name === 'writeFile') return writeFile(args.path, args.content);
   if (name === 'runCommand') return runCommand(args.command);
   if (name === 'gitCommit') return gitCommit(args.message);
+  if (name === 'searchCode') return searchCode(args.query);
   return `Outil inconnu: ${name}`;
 }
 
@@ -82,11 +102,11 @@ async function main() {
   }
 
   const messages = [
-    { role: 'system', content: 'Tu es un agent capable de lire, ecrire des fichiers et executer des commandes shell pour accomplir des taches de developpement.' },
+    { role: 'system', content: 'Tu es un agent capable de lire, ecrire des fichiers et executer des commandes shell pour accomplir des taches de developpement.\n\n' + loadSkills() },
     { role: 'user', content: userRequest },
   ];
 
-  for (let step = 0; step < 10; step++) {
+  for (let step = 0; step < 30; step++) {
     const response = await client.chat.completions.create({
       model: 'openrouter/free',
       messages,
