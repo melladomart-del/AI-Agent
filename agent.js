@@ -7,6 +7,7 @@ const { runCommand } = require('./tools/runCommand');
 const { gitCommit } = require('./tools/gitCommit');
 const { searchCode } = require('./tools/searchCode');
 const { deployNetlify } = require('./tools/deployNetlify');
+const { listFiles } = require('./tools/listFiles');
 
 function loadSkills() {
   const dir = './skills';
@@ -21,6 +22,21 @@ const client = new OpenAI({
 });
 
 const tools = [
+{
+  type: "function",
+  function: {
+    name: "listFiles",
+    description: "Liste les fichiers et dossiers du projet pour permettre à l'agent d'inspecter sa structure avant de lire ou modifier des fichiers.",
+    parameters: {
+      type: "object",
+      properties: {
+        dir: { type: "string", description: "Dossier à explorer, par défaut ." },
+        maxDepth: { type: "number", description: "Profondeur maximale de recherche" }
+      },
+      required: []
+    }
+  }
+},
   { type: 'function', function: { name: 'readFile', description: 'Lit le contenu d un fichier', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'writeFile', description: 'Ecrit du contenu dans un fichier', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
   { type: 'function', function: { name: 'runCommand', description: 'Execute une commande shell', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
@@ -30,6 +46,8 @@ const tools = [
 ];
 
 function callTool(name, args) {
+  if (name === "listFiles") return listFiles(args.dir || ".", args.maxDepth ?? 3);
+
   if (name === 'readFile') return readFile(args.path);
   if (name === 'writeFile') return writeFile(args.path, args.content);
   if (name === 'runCommand') return runCommand(args.command);
