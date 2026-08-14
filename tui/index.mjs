@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { Agent } = require('../engine/agent.js');
+const { understand } = require('../intent-engine');
 
 const agent = new Agent({ provider: 'gemini', model: 'gemini-3.5-flash' });
 
@@ -24,11 +25,24 @@ function App() {
     const text = value.trim();
     if (!text || busy) return;
 
+    const intent = understand(text);
+
     setMessages((current) => [
       ...current,
-      { role: 'user', text }
+      { role: 'user', text },
+      {
+        role: 'system',
+        text: `🧠 ${intent.intent} • ${intent.requiresAI ? 'IA' : 'local'}`
+      }
     ]);
+
     setInput('');
+
+    if (!intent.requiresAI) {
+      setBusy(false);
+      return;
+    }
+
     setBusy(true);
 
     try {
