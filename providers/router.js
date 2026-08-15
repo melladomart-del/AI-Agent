@@ -11,6 +11,10 @@ class ProviderRouter {
     if (config.gemini !== false) {
       this.providers.gemini = createProvider('gemini', config.gemini || {});
     }
+
+    if (config.local !== false) {
+      this.providers.local = createProvider('local', config.local || {});
+    }
   }
 
   get(name) {

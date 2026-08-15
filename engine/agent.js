@@ -1,6 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const ProviderRouter = require('../providers/router');
+const ModelRouter = require('./model-router');
 
 const { readFile } = require('../tools/readFile');
 const { writeFile } = require('../tools/writeFile');
@@ -139,12 +140,15 @@ class Agent {
     this.providerName = config.provider || 'openrouter';
     this.model = config.model || 'openrouter/free';
     this.router = new ProviderRouter();
+    this.modelRouter = new ModelRouter();
   }
 
   async run(userRequest, options = {}) {
-    const providerName = options.provider || this.providerName;
-    const model = options.model || this.model;
-    const provider = this.router.get(providerName);
+    const selected = await this.modelRouter.getProvider(userRequest, options);
+
+    const providerName = selected.providerName;
+    const model = selected.model;
+    const provider = selected.provider;
 
     const messages = [
       {
