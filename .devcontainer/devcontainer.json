@@ -1,0 +1,4 @@
+{
+  "name": "AI-Agent",
+  "postStartCommand": "bash .devcontainer/start-ollama.sh"
+}
