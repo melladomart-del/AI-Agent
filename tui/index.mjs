@@ -114,7 +114,10 @@ function App() {
     ]);
 
     try {
-      const result = await agent.run(text);
+      const result = await agent.run(text, {
+        provider: 'local',
+        model: 'qwen2.5-coder:3b'
+      });
 
       setMessages((current) => [
         ...current,
