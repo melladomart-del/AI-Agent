@@ -2,27 +2,23 @@ const { createProvider } = require('./index');
 
 class ProviderRouter {
   constructor(config = {}) {
+    this.config = config;
     this.providers = {};
-
-    if (config.openrouter !== false) {
-      this.providers.openrouter = createProvider('openrouter', config.openrouter || {});
-    }
-
-    if (config.gemini !== false) {
-      this.providers.gemini = createProvider('gemini', config.gemini || {});
-    }
-
-    if (config.local !== false) {
-      this.providers.local = createProvider('local', config.local || {});
-    }
   }
 
   get(name) {
-    const provider = this.providers[name];
+    if (this.providers[name]) {
+      return this.providers[name];
+    }
 
-    if (!provider) {
+    const providerConfig = this.config[name];
+
+    if (providerConfig === false) {
       throw new Error(`Provider non disponible: ${name}`);
     }
+
+    const provider = createProvider(name, providerConfig || {});
+    this.providers[name] = provider;
 
     return provider;
   }
