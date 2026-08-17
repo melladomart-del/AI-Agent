@@ -7,6 +7,10 @@ OpenAI-compatible local model backend. Target deployment: an old, low-resource
 local server.
 
 ## Key facts for future sessions
+- The agent is branded **KLYVIA** (`src/tui/render.js` `header()` title). The
+  TUI entry point is `node index.js` (one-shot: `node index.js "task"`). There
+  is NO `tui/index.mjs` file; the documented entry is `package.json` `scripts.tui`
+  = `node index.js`. `agent.js` is a backward-compatible shim to `index.js`.
 - Stack: Node.js (CommonJS). Runtime deps: only `openai` + `dotenv`. Tests use
   the built-in `node:test` runner (`node --test tests/`). **Do not add heavy
   runtime or test dependencies.**
@@ -92,9 +96,13 @@ local server.
   silently succeeding or rerouting.
 - Regression coverage: `tests/test-provider-routing.js` (real ModelRouter +
   Provider, mocked HTTP) asserts local selection, configured URL/model sent,
-  no `:11434`, no silent fallback. `tests/test-tui-e2e.js` drives the REAL
-  TUI→Agent→Orchestrator→ModelRouter→(mock)endpoint stack and asserts the
-  header + real tool/verify/memory flow end to end.
+  no `:11434`, no silent fallback. `tests/test-tui-connectivity.js` uses the
+  REAL Orchestrator (not a fake) to assert the TUI header Status line is
+  DISCONNECTED (down server) / CONNECTED (up server), the LOCAL MODEL
+  UNAVAILABLE banner never blames Ollama, and a real `orch.run` completion
+  reaches the configured endpoint+model with no `:11434`. `tests/test-tui-e2e.js`
+  drives the REAL TUI→Agent→Orchestrator→ModelRouter→(mock)endpoint stack and
+  asserts the header + real tool/verify/memory flow end to end.
 - **TUI color pitfall**: `src/tui/render.js` `colorEnabled()` keys off
   `process.stdout.isTTY` (global), NOT the TUI's injected output stream. So
   when a test captures output into a non-TTY stream but the test runner's

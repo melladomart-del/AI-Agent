@@ -63,7 +63,7 @@ function header(config, probe) {
     ? paint('yellow', '○ UNKNOWN')
     : reachable ? paint('green', '● CONNECTED') : paint('red', '● DISCONNECTED');
   const lines = [
-    `${bold(paint('cyan', 'AI CODING AGENT'))}`,
+    `${bold(paint('cyan', 'KLYVIA'))} ${dim('· local coding agent')}`,
     `${dim('Model')}    ${model}`,
     `${dim('Backend')}  ${backendLabel(config)}`,
     `${dim('Endpoint')} ${endpoint}`,
@@ -80,7 +80,7 @@ function modelUnavailable(info) {
     `Cannot connect to:`,
     `${dim(url)}`,
     '',
-    'Start your local model server and try again.',
+    'Start an OpenAI-compatible local model server and try again.',
   ];
   return box(lines, null);
 }

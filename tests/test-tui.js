@@ -14,7 +14,7 @@ class CaptureStream {
 }
 
 // Minimal fake orchestrator: a real EventBus plus stubs the TUI queries.
-function fakeOrch({ reachable = true, model = 'qwen2.5-coder:1.5b', tasks = [] } = {}) {
+function fakeOrch({ reachable = true, model = 'qwen2.5-coder-1.5b-instruct', tasks = [] } = {}) {
   const bus = new EventBus();
   return {
     bus,
@@ -72,7 +72,7 @@ function scriptedRun(orch, { passed = true, error = false } = {}) {
 test('render helpers are pure and NO_COLOR-safe', () => {
   process.env.NO_COLOR = '1';
   const h = R.header({ provider: 'local', local: { baseUrl: 'http://127.0.0.1:8080/v1', model: 'q' }, cloud: {} });
-  assert.match(h, /AI CODING AGENT/);
+  assert.match(h, /KLYVIA/);
   assert.doesNotMatch(h, /\x1b\[/, 'no ANSI when NO_COLOR set');
   assert.match(R.modelUnavailable({ baseUrl: 'http://x' }), /LOCAL MODEL UNAVAILABLE/);
   assert.equal(R.parseTestSummary('18 passed, 0 failures').ok, true);
@@ -88,7 +88,7 @@ test('TUI startup prints header and (when reachable) no unavailable banner', asy
   // avoid readline blocking: call start but resolve the probe synchronously
   await tui.start().catch(() => {});
   const text = out.toString();
-  assert.match(text, /AI CODING AGENT/);
+  assert.match(text, /KLYVIA/);
   assert.doesNotMatch(text, /LOCAL MODEL UNAVAILABLE/);
   tui._cleanup();
 });
@@ -99,7 +99,7 @@ test('TUI startup shows actionable unavailable banner when model is down', async
   await tui.start().catch(() => {});
   const text = out.toString();
   assert.match(text, /LOCAL MODEL UNAVAILABLE/);
-  assert.match(text, /Start your local model server/);
+  assert.match(text, /Start an OpenAI-compatible local model server/);
   tui._cleanup();
 });
 
