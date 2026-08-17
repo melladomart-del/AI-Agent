@@ -30,11 +30,27 @@ Configure via environment variables (see `.env.example`):
 ```
 MODEL_PROVIDER=local
 LOCAL_MODEL_BASE_URL=http://127.0.0.1:8080/v1
-LOCAL_MODEL_NAME=qwen2.5-coder:3b
+LOCAL_MODEL_NAME=qwen2.5-coder:1.5b
 ```
 
-Prefer small coding models (e.g. `qwen2.5-coder:3b`) that fit limited hardware.
-Do not commit model files; they are served by your local backend.
+Prefer small coding models that fit limited hardware. The agent has been
+validated end-to-end with **Qwen2.5-Coder-1.5B-Instruct** (Q4_K_M GGUF, ~1.1GB)
+served by `llama.cpp`/`llama-cpp-python`. `qwen2.5-coder:3b` via Ollama also
+works. Do not commit model files; they are served by your local backend.
+
+### Small-model hardening
+
+Small local models do not always emit clean OpenAI `tool_calls`: they often put
+the call in prose, use fenced JSON, or get whitespace/escaping wrong in
+`editFile`. The agent handles this without external dependencies:
+
+- `providers/tool-normalize.js` converts native, fenced-JSON, bare-JSON and
+  Hermes-style tool-call formats into canonical `tool_calls`.
+- `tools/files.js` `editFile` matches exactly, then falls back to literal-escape
+  relaxation (`\n` → newline) and whitespace-normalized matching, and returns a
+  file snippet on failure so the model can self-correct.
+- The loop nudges prose-only turns back to tool use, and guards against repeated
+  identical calls.
 
 ## Architecture
 

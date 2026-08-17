@@ -25,7 +25,7 @@ class Orchestrator {
     this.registry = new ToolRegistry(this.config);
     this._registerTools();
     this.memory = new Memory(require('path').join(this.config.rootDir, this.config.memoryDir));
-    this.contextSelector = new ContextSelector(this.config);
+    this.contextSelector = new ContextSelector(this.config, this.memory);
     this.planner = new Planner({ modelRouter: this.modelRouter, config: this.config });
     this.verifier = new Verifier({ registry: this.registry, config: this.config });
     this.corrector = new Corrector({

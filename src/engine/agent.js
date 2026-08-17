@@ -26,23 +26,23 @@ class Agent {
   }
 
   _systemPrompt(plan, context) {
-    return `You are an autonomous AI software-engineering agent running locally.
-You operate by choosing tools, observing their results, and iterating until the task is done.
+    return `You are an autonomous AI software-engineering agent running on a local model.
+You act ONLY by calling tools, observing results, and iterating until the task is done. Do not just describe what to do — DO it with tools.
 
-Workflow:
-1. Understand the task.
-2. Inspect the repository structure (listFiles, searchCode) if needed.
-3. Read the relevant files before modifying them.
-4. Make focused edits (editFile or writeFile).
-5. Run tests/commands to verify your changes (runTests or runCommand).
-6. If verification fails, diagnose and correct before continuing.
-7. Call \`finish\` with a short summary when the task is complete.
+Step-by-step workflow (follow it strictly):
+1. listFiles and/or searchCode to find relevant files.
+2. readFile the file(s) you will change, so you can copy exact text.
+3. Make the fix with editFile (preferred) or writeFile.
+4. IMMEDIATELY run runTests (or runCommand with the verify command) to check your change.
+5. If the output shows a failure, read it, diagnose, and fix with another edit. Do not repeat a failed edit unchanged.
+6. When tests pass, call finish with a short summary. Do NOT keep editing after tests pass.
 
 Rules:
 - Make minimal, focused changes.
-- Never claim success without verifying (run tests or the relevant command).
-- Prefer editFile over rewriting whole files when possible.
-- Respect protected paths and safety rejections returned by tools.
+- editFile: oldStr must be copied EXACTLY from the file (including indentation). It must match exactly once.
+- Never claim success without running the tests first.
+- Do not re-edit a file that already passes its tests.
+- Respect safety rejections returned by tools.
 
 Plan:
 ${plan || '(no explicit plan)'}
@@ -53,8 +53,7 @@ ${context.repoMap || '(empty repo)'}
 Relevant skills:
 ${context.skills || '(none)'}
 
-${context.experiences ? 'Relevant past experiences:\n' + context.experiences : ''}
-You have the following tools available: listFiles, readFile, writeFile, editFile, deleteFile, searchCode, runCommand, gitCommit, gitStatus, runTests, finish.`;
+${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '\n' : ''}Available tools: listFiles, readFile, writeFile, editFile, deleteFile, searchCode, runCommand, gitCommit, gitStatus, runTests, finish.`;
   }
 
   /**
@@ -87,6 +86,10 @@ You have the following tools available: listFiles, readFile, writeFile, editFile
     const actions = [];
     let summary = '';
     let finished = false;
+    const knownToolNames = this.registry.list().map((t) => t.name);
+    const obsMax = (this.config.observationMaxChars && this.config.observationMaxChars > 0) ? this.config.observationMaxChars : Infinity;
+
+    const truncate = (s) => (s.length <= obsMax ? s : s.slice(0, obsMax) + `\n... (truncated, ${s.length - obsMax} more chars)`);
 
     for (let step = 0; step < this.config.maxSteps; step++) {
       this.bus.emit('step:start', { step });
@@ -95,6 +98,7 @@ You have the following tools available: listFiles, readFile, writeFile, editFile
         message = await this.modelRouter.complete({
           messages,
           tools: this.registry.schemas(),
+          knownToolNames,
         });
       } catch (err) {
         this.bus.emit('error', { step, error: err.message });
@@ -103,6 +107,16 @@ You have the following tools available: listFiles, readFile, writeFile, editFile
       messages.push(message);
 
       if (!message.tool_calls || message.tool_calls.length === 0) {
+        // Some small models answer in prose instead of making a tool call. Only
+        // treat prose as a final summary once the agent has actually performed
+        // work; otherwise nudge toward tool use so the run does not end empty.
+        if (actions.length === 0) {
+          messages.push({
+            role: 'user',
+            content: 'Respond by calling a tool (use the provided function-call format). Start by inspecting the repository with listFiles or searchCode, then read and fix the relevant file. Do not just describe what to do.',
+          });
+          continue;
+        }
         summary = message.content || '';
         finished = true;
         break;
@@ -110,24 +124,48 @@ You have the following tools available: listFiles, readFile, writeFile, editFile
 
       for (const call of message.tool_calls) {
         let args = {};
+        let parseError = null;
         try {
           args = JSON.parse(call.function.arguments || '{}');
-        } catch {
+        } catch (e) {
+          parseError = e.message;
           args = {};
         }
-        this.bus.emit('tool:call', { name: call.function.name, args });
-        const observation = await this.registry.dispatch(call.function.name, args);
-        this.bus.emit('tool:result', { name: call.function.name, observation });
-        actions.push({ name: call.function.name, args });
-        if (/^Error:/.test(observation)) errors.push({ tool: call.function.name, observation });
+        const name = call.function.name;
+        this.bus.emit('tool:call', { name, args });
+        let observation;
+        if (parseError) {
+          observation = `Error: malformed JSON arguments for "${name}": ${parseError}. Arguments were: ${String(call.function.arguments).slice(0, 200)}. Re-issue the tool call with valid JSON arguments.`;
+        } else {
+          observation = await this.registry.dispatch(name, args);
+        }
+        this.bus.emit('tool:result', { name, observation });
+        actions.push({ name, args });
+        // Record actionable failure signals: tool errors, non-zero exits, and
+        // explicit FAILED markers. These feed the corrector and memory.
+        if (/^Error:|\[exit [1-9]|\bFAILED\b/.test(observation)) errors.push({ tool: name, observation });
 
-        if (call.function.name === 'finish' || String(observation).startsWith('__FINISH__')) {
+        if (name === 'finish' || String(observation).startsWith('__FINISH__')) {
           summary = String(observation).replace('__FINISH__', '') || args.summary || '';
           finished = true;
-          messages.push({ role: 'tool', tool_call_id: call.id, content: observation });
+          messages.push({ role: 'tool', tool_call_id: call.id, content: truncate(String(observation)) });
           break;
         }
-        messages.push({ role: 'tool', tool_call_id: call.id, content: observation });
+        messages.push({ role: 'tool', tool_call_id: call.id, content: truncate(String(observation)) });
+      }
+      // Repetition guard for small models that loop on the same read-only call:
+      // if the last two actions are identical, push a nudge to make progress.
+      const n = actions.length;
+      if (n >= 2) {
+        const last = actions[n - 1];
+        const prev = actions[n - 2];
+        const same = last.name === prev.name && JSON.stringify(last.args) === JSON.stringify(prev.args);
+        if (same && last.name !== 'finish') {
+          messages.push({
+            role: 'user',
+            content: `You just called "${last.name}" with the same arguments again. Stop repeating. ${/read|search|list/i.test(last.name) ? 'You have enough context — now make the fix with editFile or writeFile, then runTests.' : 'Try a different approach or call finish if the task is already complete.'}`,
+          });
+        }
       }
       if (finished) break;
     }

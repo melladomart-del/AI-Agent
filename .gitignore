@@ -4,3 +4,9 @@ node_modules/
 # Agent operational memory (regenerated locally, not version-controlled)
 .agent-memory/
 *.log
+
+# Local model files (GGUF etc.) — never commit large model weights.
+# Keep the agent model-agnostic; download models out of band.
+*.gguf
+*.gguf.*
+models/

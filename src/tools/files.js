@@ -41,7 +41,10 @@ function listFilesImpl(dir, maxDepth, depth, prefix) {
         lines.push(`${rel}/`);
         if (depth < maxDepth) {
           const sub = path.join(root, entry.name);
-          lines.push(...listFilesImpl(sub, maxDepth, depth + 1, rel));
+          // listFilesImpl returns a joined string; split so we extend the
+          // array instead of spreading the string into individual characters.
+          const child = listFilesImpl(sub, maxDepth, depth + 1, rel);
+          if (child) lines.push(...child.split('\n'));
         }
       } else {
         lines.push(rel);
@@ -106,15 +109,113 @@ const editFile = new Tool({
   handler: (args) => {
     const content = safeRead(args.path);
     if (content === null) return `Error: file not found: ${args.path}`;
-    const idx = content.indexOf(args.oldStr);
-    if (idx === -1) return `Error: oldStr not found in ${args.path}.`;
-    const second = content.indexOf(args.oldStr, idx + 1);
-    if (second !== -1) return `Error: oldStr matches multiple locations in ${args.path}; make it more specific.`;
-    const updated = content.slice(0, idx) + args.newStr + content.slice(idx + args.oldStr.length);
-    fs.writeFileSync(args.path, updated, 'utf-8');
+    const result = applyEdit(content, args.oldStr, args.newStr);
+    if (result.error) {
+      // Rich error: include a snippet of the actual file so the model can copy
+      // exact text. Small local models often get whitespace/escaping wrong, so
+      // the message also reminds them how to express newlines.
+      const snippet = content.split('\n').slice(0, 30).join('\n');
+      return `Error: ${result.error} in ${args.path}.\nTip: copy oldStr EXACTLY from the file (readFile first). In JSON, write real newlines as \\n (a backslash followed by n), not as literal line breaks inside the string.\n--- first 30 lines of ${args.path} ---\n${snippet}`;
+    }
+    fs.writeFileSync(args.path, result.updated, 'utf-8');
     return `Edited ${args.path}.`;
   },
 });
+
+/**
+ * Apply a single oldStr->newStr replacement. Tries, in order:
+ *   1. exact match
+ *   2. literal-escape fallback: treat literal "\n","\t","\r" in oldStr/newStr
+ *      as real whitespace (small models often emit "\n" as two characters)
+ *   3. whitespace-normalized fallback: collapse runs of whitespace so a model's
+ *      single-line rendering of a multi-line block still matches
+ * In fallbacks 2 and 3 the replacement preserves the original file's leading
+ * whitespace for the matched span where possible.
+ * @returns {{updated?: string, error?: string}}
+ */
+function applyEdit(content, oldStr, newStr) {
+  if (typeof oldStr !== 'string' || typeof newStr !== 'string') return { error: 'oldStr and newStr must be strings' };
+
+  const MULTIPLE = 'oldStr matches multiple locations; make it more specific';
+
+  // 1. exact
+  {
+    const i = content.indexOf(oldStr);
+    if (i !== -1) {
+      if (content.indexOf(oldStr, i + 1) !== -1) return { error: MULTIPLE };
+      return { updated: content.slice(0, i) + newStr + content.slice(i + oldStr.length) };
+    }
+  }
+
+  // 2. literal-escape relaxation
+  const laxOld = relaxEscapes(oldStr);
+  if (laxOld !== oldStr) {
+    const i = content.indexOf(laxOld);
+    if (i !== -1) {
+      if (content.indexOf(laxOld, i + 1) !== -1) return { error: MULTIPLE };
+      const laxNew = relaxEscapes(newStr);
+      return { updated: content.slice(0, i) + laxNew + content.slice(i + laxOld.length) };
+    }
+  }
+
+  // 3. whitespace-normalized match: collapse \s+ runs on both sides.
+  const norm = (s) => s.replace(/\s+/g, ' ').trim();
+  const nContent = norm(content);
+  const nOld = norm(oldStr);
+  if (nOld.length >= 3) {
+    const at = nContent.indexOf(nOld);
+    if (at !== -1) {
+      if (nContent.indexOf(nOld, at + 1) !== -1) return { error: MULTIPLE };
+      const bounds = locateNormalized(content, oldStr);
+      if (bounds) {
+        const laxNew = relaxEscapes(newStr);
+        return { updated: content.slice(0, bounds.start) + laxNew + content.slice(bounds.end) };
+      }
+    }
+  }
+  return { error: 'oldStr not found' };
+}
+
+function relaxEscapes(s) {
+  return s.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
+}
+
+/**
+ * Find the byte bounds in `content` that correspond to `oldStr` under
+ * whitespace-normalized comparison. Walks content and oldStr together, treating
+ * any run of whitespace in either as matching any run of whitespace in the other.
+ */
+function locateNormalized(content, oldStr) {
+  let i = 0, j = 0, start = -1;
+  const isWs = (c) => c === ' ' || c === '\n' || c === '\t' || c === '\r';
+  while (i < content.length && j < oldStr.length) {
+    const cw = isWs(content[i]);
+    const ow = isWs(oldStr[j]);
+    if (cw && ow) {
+      if (start === -1) start = i;
+      while (i < content.length && isWs(content[i])) i++;
+      while (j < oldStr.length && isWs(oldStr[j])) j++;
+    } else if (cw) {
+      if (start !== -1) return null; // oldStr had non-ws here, content has ws -> mismatch
+      i++;
+    } else if (ow) {
+      if (start === -1) { start = i; }
+      while (j < oldStr.length && isWs(oldStr[j])) j++;
+    } else {
+      if (content[i] === oldStr[j]) {
+        if (start === -1) start = i;
+        i++; j++;
+      } else {
+        return null;
+      }
+    }
+  }
+  // consume trailing whitespace in oldStr
+  while (j < oldStr.length && isWs(oldStr[j])) j++;
+  if (j < oldStr.length) return null;
+  if (start === -1) return null;
+  return { start, end: i };
+}
 
 const deleteFile = new Tool({
   name: 'deleteFile',
@@ -300,5 +401,6 @@ module.exports = {
   // for testing
   _listFilesImpl: listFilesImpl,
   _searchCodeImpl: searchCodeImpl,
+  _applyEdit: applyEdit,
   IGNORED_DIRS,
 };

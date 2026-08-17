@@ -136,6 +136,19 @@ test('searchCode with regex', async () => {
   process.chdir('/');
 });
 
+test('listFiles lists nested files as whole paths (regression: char-by-char spread)', async () => {
+  const dir = setupTmp();
+  process.chdir(dir);
+  const reg = makeRegistry(dir);
+  const out = await reg.dispatch('listFiles', { dir: '.', maxDepth: 3 });
+  const lines = out.split('\n');
+  // Nested file must appear as a single whole path, not split into characters.
+  assert.ok(lines.includes('sub/c.js'), `expected 'sub/c.js' in ${JSON.stringify(lines)}`);
+  assert.ok(!lines.includes('s'), 'individual characters must not appear as lines');
+  assert.ok(lines.some((l) => l === 'sub/' || l === 'sub'), 'directory entry present');
+  process.chdir('/');
+});
+
 test('runCommand executes and returns output', async () => {
   const reg = makeRegistry(setupTmp());
   const out = await reg.dispatch('runCommand', { command: 'echo hello' });

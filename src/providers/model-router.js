@@ -21,6 +21,8 @@ class ModelRouter {
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       timeoutMs: config.timeoutMs,
+      maxRetries: config.providerRetries,
+      retryBackoffMs: config.retryBackoffMs,
     });
     this.cloud = new Provider({
       name: 'cloud',
@@ -30,6 +32,8 @@ class ModelRouter {
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       timeoutMs: config.timeoutMs,
+      maxRetries: config.providerRetries,
+      retryBackoffMs: config.retryBackoffMs,
     });
   }
 
@@ -43,7 +47,7 @@ class ModelRouter {
       return await primary.complete(opts);
     } catch (err) {
       if (!this.config.cloudFallback) throw err;
-      // Only fall back to a configured cloud backend.
+      // Only fall back to a configured cloud backend with an API key.
       if (!this.config.cloud.apiKey && this.config.provider !== 'cloud') throw err;
       this._warn(`primary provider "${primary.name}" failed (${err.message}); falling back to cloud`);
       return this.cloud.complete(opts);

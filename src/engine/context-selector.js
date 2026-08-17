@@ -11,11 +11,14 @@ const { Memory } = require('./memory');
  * retrieved past experiences. This is the heart of "intelligent context".
  */
 class ContextSelector {
-  constructor(config) {
+  constructor(config, memory) {
     this.config = config;
     this.repoAnalyzer = new RepoAnalyzer(config.rootDir);
     this.skills = new SkillRegistry(path.join(config.rootDir, 'skills'));
-    this.memory = new Memory(path.join(config.rootDir, config.memoryDir));
+    // Share the orchestrator's Memory instance when provided so that experiences
+    // recorded during a run are immediately visible to retrieval. Falling back to
+    // a new instance keeps the selector usable standalone.
+    this.memory = memory || new Memory(path.join(config.rootDir, config.memoryDir));
   }
 
   build(task) {

@@ -35,6 +35,24 @@ local server.
 - Safety violations are returned as observation strings, never thrown.
 - Adding a tool = add a `Tool` instance and register it in `orchestrator._registerTools`.
 - Skills live in `skills/*.md`; keep them non-empty and de-duplicated.
-- `.agent-memory/` and `.env` are gitignored. Never commit model files.
-- See `docs/ARCHITECTURE.md` for the foundation decision (OpenHands + Aider +
-  OpenCode concepts, implemented natively rather than imported wholesale).
+- `.agent-memory/` and `.env` are gitignored. Never commit model files (`*.gguf`, `models/` gitignored).
+
+## Small-model hardening (validated end-to-end with Qwen2.5-Coder-1.5B)
+- `src/providers/tool-normalize.js` `normalizeMessage()` converts native,
+  fenced-JSON, bare-JSON and Hermes-style tool calls into canonical
+  `tool_calls`. Always pass `knownToolNames` from the registry to the provider.
+- `src/tools/files.js` `applyEdit()` matches exactly, then literal-escape
+  relaxation (`\n`→newline), then whitespace-normalized matching; reports
+  "multiple locations" for ambiguous matches; returns a file snippet on
+  failure. Exported as `_applyEdit` for tests.
+- Agent loop: only ends on a prose turn if `actions.length > 0` (else nudges
+  to tool use); guards against repeated identical tool calls; truncates
+  observations via `OBSERVATION_MAX_CHARS`.
+- `Memory` is shared (one instance) between the orchestrator, agent and
+  `ContextSelector` so experiences recorded during a run are retrievable
+  immediately — do NOT give the ContextSelector its own Memory instance.
+- Live tests are env-gated (`AI_AGENT_LIVE=1` + `LOCAL_MODEL_BASE_URL`).
+  Run the full suite with `npm test` (live tests skip without a server).
+
+## See `docs/ARCHITECTURE.md` for the foundation decision (OpenHands + Aider +
+OpenCode concepts, implemented natively rather than imported wholesale).

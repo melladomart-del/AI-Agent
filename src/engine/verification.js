@@ -21,9 +21,21 @@ class Verifier {
     } else {
       obs = await this.registry.dispatch('runTests', {});
     }
-    const passed = !/\bFAILED\b|\[exit [1-9]/.test(obs) && /\bPASSED\b/.test(obs);
-    // If runTests wasn't available or returned an error, treat as failed.
     if (obs.startsWith('Error: unknown tool')) return { passed: false, output: obs };
+
+    // A "failed" observation: an explicit FAILED marker, a non-zero exit line
+    // (runCommand/runTests emit "[exit N] ..."), or a tool-level Error.
+    const isFailed = /^Error:|\bFAILED\b|\[exit [1-9]/.test(obs);
+
+    if (verifyCommand) {
+      // For a custom command, success is an exit-0 (no failure marker). We do
+      // NOT require a literal "PASSED" token — arbitrary commands (build,
+      // lint, a require-check) succeed by exiting 0.
+      return { passed: !isFailed, output: obs };
+    }
+    // For the default test runner, require an explicit PASSED marker so a
+    // no-op/empty test run is not mistaken for success.
+    const passed = !isFailed && /\bPASSED\b/.test(obs);
     return { passed, output: obs };
   }
 }

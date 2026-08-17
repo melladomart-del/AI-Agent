@@ -60,3 +60,21 @@ test('memory survives reload from disk', () => {
   assert.equal(all.length, 1);
   assert.match(all[0].task, /persisted task/);
 });
+
+test('shared Memory instance sees recorded experiences immediately (no stale cache)', () => {
+  // Regression: the agent and the context selector must share ONE Memory instance
+  // so that an experience recorded during a run is retrievable afterwards without
+  // reloading from disk (the per-instance cache would otherwise hide it).
+  const { ContextSelector } = require('../src/engine/context-selector');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-mem-shared-'));
+  process.chdir(dir);
+  const config = { rootDir: dir, repoMapMaxTokens: 256, skillTopK: 2, memoryDir: '.agent-memory' };
+  const shared = new Memory(path.join(dir, config.memoryDir));
+  shared.record({ task: 'fix the math bug in src/math.js', result: 'passed', score: 1, tags: ['math', 'bug'] });
+
+  const cs = new ContextSelector(config, shared);
+  const ctx = cs.build('fix the math bug again');
+  assert.ok(ctx.experiences && ctx.experiences.length >= 1, 'shared memory should expose the recorded experience');
+  assert.match(ctx.experiences[0].task, /math bug/);
+  process.chdir('/');
+});
