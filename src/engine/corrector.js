@@ -23,6 +23,7 @@ class Corrector {
       const result = await this.agent.run(`${task}\n\n${instruction}`, { resume: true });
       attempts.push(result);
       const v = await this.verifier.verify({ verifyCommand });
+      this.bus?.emit('verify:result', { passed: v.passed, phase: 'correction' });
       if (v.passed) {
         this.bus?.emit('correct:result', { fixed: true, attempts: i + 1 });
         return { fixed: true, attempts, finalOutput: v.output };

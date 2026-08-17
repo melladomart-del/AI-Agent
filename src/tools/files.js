@@ -7,6 +7,14 @@ const { Tool } = require('./tool');
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', '.agent-memory', 'dist', 'build', '.next', '.cache']);
 
+/** Resolve a path against the workspace cwd from the tool context, when given. */
+function resolve(p, ctx) {
+  const cwd = ctx && ctx.cwd;
+  if (!p) return p;
+  if (path.isAbsolute(p)) return p;
+  return cwd ? path.join(cwd, p) : p;
+}
+
 function safeRead(p) {
   if (!fs.existsSync(p)) return null;
   return fs.readFileSync(p, 'utf-8');
@@ -26,11 +34,11 @@ const listFiles = new Tool({
     },
     required: [],
   },
-  handler: (args) => listFilesImpl(args.dir || '.', args.maxDepth ?? 3, 0, ''),
+  handler: (args, ctx) => listFilesImpl(args.dir || '.', args.maxDepth ?? 3, 0, '', ctx),
 });
 
-function listFilesImpl(dir, maxDepth, depth, prefix) {
-  let root = dir || '.';
+function listFilesImpl(dir, maxDepth, depth, prefix, ctx) {
+  let root = resolve(dir || '.', ctx);
   try {
     const entries = fs.readdirSync(root, { withFileTypes: true });
     const lines = [];
@@ -43,7 +51,7 @@ function listFilesImpl(dir, maxDepth, depth, prefix) {
           const sub = path.join(root, entry.name);
           // listFilesImpl returns a joined string; split so we extend the
           // array instead of spreading the string into individual characters.
-          const child = listFilesImpl(sub, maxDepth, depth + 1, rel);
+          const child = listFilesImpl(sub, maxDepth, depth + 1, rel, ctx);
           if (child) lines.push(...child.split('\n'));
         }
       } else {
@@ -64,8 +72,8 @@ const readFile = new Tool({
     properties: { path: { type: 'string', description: 'Path relative to the workspace root.' } },
     required: ['path'],
   },
-  handler: (args) => {
-    const content = safeRead(args.path);
+  handler: (args, ctx) => {
+    const content = safeRead(resolve(args.path, ctx));
     if (content === null) return `Error: file not found: ${args.path}`;
     return content;
   },
@@ -83,11 +91,12 @@ const writeFile = new Tool({
     required: ['path', 'content'],
   },
   permissions: { write: true },
-  handler: (args) => {
+  handler: (args, ctx) => {
     if (typeof args.content !== 'string') return 'Error: content must be a string.';
-    const dir = path.dirname(args.path);
+    const full = resolve(args.path, ctx);
+    const dir = path.dirname(full);
     if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(args.path, args.content, 'utf-8');
+    fs.writeFileSync(full, args.content, 'utf-8');
     return `Wrote ${args.content.length} chars to ${args.path}.`;
   },
 });
@@ -106,8 +115,9 @@ const editFile = new Tool({
     required: ['path', 'oldStr', 'newStr'],
   },
   permissions: { write: true },
-  handler: (args) => {
-    const content = safeRead(args.path);
+  handler: (args, ctx) => {
+    const full = resolve(args.path, ctx);
+    const content = safeRead(full);
     if (content === null) return `Error: file not found: ${args.path}`;
     const result = applyEdit(content, args.oldStr, args.newStr);
     if (result.error) {
@@ -117,7 +127,7 @@ const editFile = new Tool({
       const snippet = content.split('\n').slice(0, 30).join('\n');
       return `Error: ${result.error} in ${args.path}.\nTip: copy oldStr EXACTLY from the file (readFile first). In JSON, write real newlines as \\n (a backslash followed by n), not as literal line breaks inside the string.\n--- first 30 lines of ${args.path} ---\n${snippet}`;
     }
-    fs.writeFileSync(args.path, result.updated, 'utf-8');
+    fs.writeFileSync(full, result.updated, 'utf-8');
     return `Edited ${args.path}.`;
   },
 });
@@ -222,11 +232,12 @@ const deleteFile = new Tool({
   description: 'Delete a file. Refuses to delete directories for safety.',
   parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
   permissions: { write: true, destructive: true },
-  handler: (args) => {
+  handler: (args, ctx) => {
     try {
-      const stat = fs.statSync(args.path);
+      const full = resolve(args.path, ctx);
+      const stat = fs.statSync(full);
       if (stat.isDirectory()) return `Error: ${args.path} is a directory; deleteFile only removes files.`;
-      fs.unlinkSync(args.path);
+      fs.unlinkSync(full);
       return `Deleted ${args.path}.`;
     } catch (err) {
       return `Error: ${err.message}`;
@@ -247,10 +258,10 @@ const searchCode = new Tool({
     },
     required: ['query'],
   },
-  handler: (args) => searchCodeImpl(args.query, args.glob),
+  handler: (args, ctx) => searchCodeImpl(args.query, args.glob, ctx),
 });
 
-function searchCodeImpl(query, glob) {
+function searchCodeImpl(query, glob, ctx) {
   let pattern;
   if (query.startsWith('/') && query.lastIndexOf('/') > 0) {
     const last = query.lastIndexOf('/');
@@ -284,7 +295,7 @@ function searchCodeImpl(query, glob) {
       }
     }
   }
-  walk('.', '');
+  walk(ctx && ctx.cwd ? resolve('.', ctx) : '.', '');
   return results.length ? results.join('\n') : 'No matches found.';
 }
 
@@ -304,13 +315,13 @@ const runCommand = new Tool({
     required: ['command'],
   },
   permissions: { shell: true },
-  handler: (args) =>
-    new Promise((resolve) => {
-      exec(args.command, { encoding: 'utf-8', maxBuffer: 1024 * 1024 * 8 }, (err, stdout, stderr) => {
+  handler: (args, ctx) =>
+    new Promise((done) => {
+      exec(args.command, { cwd: ctx && ctx.cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 * 8 }, (err, stdout, stderr) => {
         if (err) {
-          resolve(`[exit ${err.code ?? 1}] ${stderr || err.message}\n${stdout || ''}`);
+          done(`[exit ${err.code ?? 1}] ${stderr || err.message}\n${stdout || ''}`);
         } else {
-          resolve(`${stdout}${stderr ? '\n[stderr]\n' + stderr : ''}`);
+          done(`${stdout}${stderr ? '\n[stderr]\n' + stderr : ''}`);
         }
       });
     }),
@@ -327,10 +338,11 @@ const gitCommit = new Tool({
     required: ['message'],
   },
   permissions: { shell: true },
-  handler: (args) => {
+  handler: (args, ctx) => {
     try {
-      execSync('git add -A', { encoding: 'utf-8' });
-      execSync(`git commit -m "${args.message.replace(/"/g, '\\"')}"`, { encoding: 'utf-8', stdio: 'pipe' });
+      const cwd = ctx && ctx.cwd;
+      execSync('git add -A', { encoding: 'utf-8', cwd });
+      execSync(`git commit -m "${args.message.replace(/"/g, '\\"')}"`, { encoding: 'utf-8', stdio: 'pipe', cwd });
       return `Committed: ${args.message}`;
     } catch (err) {
       return `Error: ${err.message}`;
@@ -343,9 +355,9 @@ const gitStatus = new Tool({
   description: 'Return the current git status (porcelain) of the repository.',
   parameters: { type: 'object', properties: {}, required: [] },
   permissions: { shell: true },
-  handler: () => {
+  handler: (args, ctx) => {
     try {
-      return execSync('git status --porcelain', { encoding: 'utf-8' }) || 'Working tree clean.';
+      return execSync('git status --porcelain', { encoding: 'utf-8', cwd: ctx && ctx.cwd }) || 'Working tree clean.';
     } catch (err) {
       return `Error: ${err.message}`;
     }
@@ -359,12 +371,12 @@ const runTests = new Tool({
   description: 'Run the project test suite (npm test) and return output. Used by the agent to verify changes.',
   parameters: { type: 'object', properties: {}, required: [] },
   permissions: { shell: true },
-  handler: () =>
-    new Promise((resolve) => {
-      exec('npm test --silent', { encoding: 'utf-8', maxBuffer: 1024 * 1024 * 8 }, (err, stdout, stderr) => {
+  handler: (args, ctx) =>
+    new Promise((done) => {
+      exec('npm test --silent', { cwd: ctx && ctx.cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 * 8 }, (err, stdout, stderr) => {
         const out = `${stdout}${stderr ? '\n[stderr]\n' + stderr : ''}`;
-        if (err) resolve(`[exit ${err.code ?? 1}] tests FAILED\n${out}`);
-        else resolve(`tests PASSED\n${out}`);
+        if (err) done(`[exit ${err.code ?? 1}] tests FAILED\n${out}`);
+        else done(`tests PASSED\n${out}`);
       });
     }),
 });

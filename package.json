@@ -8,7 +8,7 @@
     "start": "node index.js",
     "agent": "node index.js",
     "tui": "node index.js",
-    "test": "node --test \"tests/**/*.js\""
+    "test": "node --test \"tests/test-*.js\""
   },
   "repository": {
     "type": "git",

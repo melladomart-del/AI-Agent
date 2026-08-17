@@ -43,9 +43,11 @@ class ToolRegistry {
     const tool = this.get(name);
     if (!tool) return `Error: unknown tool "${name}".`;
     args = args || {};
-    if (ctx.cwd && !args.dir) {
-      // let file tools resolve relative to rootDir (set in ctx)
-    }
+    // Provide a working directory to handlers so file/shell tools resolve
+    // paths and commands relative to the workspace root WITHOUT mutating the
+    // process cwd (which would be unsafe under concurrent execution). Handlers
+    // that understand `ctx.cwd` use it; legacy handlers fall back to cwd.
+    ctx = { cwd: this.config.rootDir || process.cwd(), ...ctx };
 
     if ((tool.permissions || {}).write && args.path) {
       if (!this._insideRoot(args.path)) {

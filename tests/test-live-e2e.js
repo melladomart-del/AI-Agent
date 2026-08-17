@@ -40,18 +40,23 @@ function makeTempProject() {
     'function add(a, b) {\n  return a - b;\n}\nmodule.exports = { add };\n',
   );
   fs.mkdirSync(path.join(dir, 'test'), { recursive: true });
+  // Plain assertion script (not node --test): running `node --test` as a child
+  // of this test runner makes node skip the nested files ("run() is being
+  // called recursively"), which would mask real failures. A plain script's
+  // exit code is the real verdict and works inside and outside the runner.
   fs.writeFileSync(
-    path.join(dir, 'test', 'math.test.js'),
-    "const { test } = require('node:test');\nconst assert = require('node:assert/strict');\n" +
+    path.join(dir, 'test', 'run-tests.js'),
+    "const assert = require('assert');\n" +
       "const { add } = require('../src/math');\n" +
-      "test('add adds two numbers', () => { assert.equal(add(2, 3), 5); });\n" +
-      "test('add handles zero', () => { assert.equal(add(0, 0), 0); });\n",
+      "assert.equal(add(2, 3), 5, 'add(2,3) should be 5');\n" +
+      "assert.equal(add(0, 0), 0, 'add(0,0) should be 0');\n" +
+      "console.log('all tests passed');\n",
   );
   fs.writeFileSync(
     path.join(dir, 'package.json'),
     JSON.stringify({
       name: 'tmp-live-project', version: '1.0.0', private: true,
-      scripts: { test: 'node --test' },
+      scripts: { test: 'node test/run-tests.js' },
     }, null, 2),
   );
   fs.writeFileSync(path.join(dir, '.env'), 'LOCAL_MODEL_BASE_URL=dummy\n');

@@ -36,6 +36,15 @@ local server.
 - Adding a tool = add a `Tool` instance and register it in `orchestrator._registerTools`.
 - Skills live in `skills/*.md`; keep them non-empty and de-duplicated.
 - `.agent-memory/` and `.env` are gitignored. Never commit model files (`*.gguf`, `models/` gitignored).
+- **Tool path/command resolution is `ctx.cwd`-based, NOT `process.cwd()`-based.**
+  `ToolRegistry.dispatch` sets `ctx.cwd = config.rootDir`; file tools in
+  `src/tools/files.js` resolve paths with `resolve(p, ctx)` and shell/git/test
+  tools pass `{ cwd: ctx.cwd }` to `exec`/`execSync`. Do NOT call
+  `process.chdir()` to align cwd with rootDir — it is a global mutation that
+  is unsafe under concurrent test execution. New tools should accept `(args, ctx)`
+  and resolve paths via `ctx.cwd`.
+- `npm test` runs `node --test "tests/test-*.js"` (the `test-*.js` glob
+  deliberately excludes `tests/fixtures/`, which hold test helpers, not tests).
 
 ## Small-model hardening (validated end-to-end with Qwen2.5-Coder-1.5B)
 - `src/providers/tool-normalize.js` `normalizeMessage()` converts native,
@@ -53,6 +62,20 @@ local server.
   immediately — do NOT give the ContextSelector its own Memory instance.
 - Live tests are env-gated (`AI_AGENT_LIVE=1` + `LOCAL_MODEL_BASE_URL`).
   Run the full suite with `npm test` (live tests skip without a server).
+- **Integration tests without a GPU** use a stateful mock OpenAI-compatible
+  server (`tests/fixtures/mock-openai-server.js`) that decides its next tool
+  call from the genuine observations it receives. The real Provider, tool-call
+  normalization, tools, verification, correction and memory are exercised; only
+  model inference is mocked. This is the standard way to validate the agent
+  loop when no local model server is available.
+- **Pitfall: do not use `node --test` as the `npm test` script of a throwaway
+  project exercised from inside the test runner.** Running `node --test` as a
+  child of a `node --test` process makes node skip the nested files
+  ("run() is being called recursively within a test file"), masking real
+  failures (it exits 0 with 0 tests run). The `tests/fixtures/temp-projects.js`
+  helpers therefore ship a PLAIN assertion script (`node test/run-tests.js`)
+  whose exit code is the real verdict - works identically inside and outside
+  the runner.
 
 ## See `docs/ARCHITECTURE.md` for the foundation decision (OpenHands + Aider +
 OpenCode concepts, implemented natively rather than imported wholesale).
