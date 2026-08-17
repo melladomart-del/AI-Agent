@@ -1,19 +1,28 @@
 {
   "name": "ai-agent",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.2.0",
+  "description": "A modular, local-first, open-source AI coding agent.",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "agent": "node index.js",
+    "tui": "node index.js",
+    "test": "node --test \"tests/**/*.js\""
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Nabix602/AI-Agent.git"
   },
-  "keywords": [],
+  "keywords": [
+    "ai",
+    "agent",
+    "coding-agent",
+    "local",
+    "llm"
+  ],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/Nabix602/AI-Agent/issues"
   },
@@ -21,8 +30,5 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "openai": "^7.4.0"
-  },
-  "devDependencies": {
-    "netlify-cli": "^27.1.1"
   }
 }

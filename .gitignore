@@ -1,2 +1,6 @@
 node_modules/
 .env
+
+# Agent operational memory (regenerated locally, not version-controlled)
+.agent-memory/
+*.log
