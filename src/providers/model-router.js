@@ -41,6 +41,19 @@ class ModelRouter {
     return this.config.provider === 'cloud' ? this.cloud : this.local;
   }
 
+  /**
+   * Best-effort reachability probe of the primary backend. Resolves to
+   * { reachable: boolean, baseUrl, model, name }. Uses a short timeout; any
+   * error (connection refused, timeout, 4xx) is reported as unreachable with
+   * an actionable message. Used by the TUI to show the active model / detect
+   * that the local server is down before submitting a task.
+   */
+  async isReachable() {
+    const primary = this._primary();
+    const probe = await primary.probe({ timeoutMs: 3000 });
+    return { ...probe, name: primary.name, baseUrl: primary.baseUrl, model: primary.model };
+  }
+
   async complete(opts) {
     const primary = this._primary();
     try {

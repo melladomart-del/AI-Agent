@@ -32,6 +32,7 @@ class Orchestrator {
       agent: null, // set below
       verifier: this.verifier,
       config: this.config,
+      eventBus: this.bus,
     });
     this.agent = new Agent({
       modelRouter: this.modelRouter,

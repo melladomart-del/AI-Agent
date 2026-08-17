@@ -44,6 +44,26 @@ class Provider {
   }
 
   /**
+   * Short-timeout reachability probe. We build a throwaway client with a small
+   * timeout (default 3s) so a hung server does not stall the TUI. Returns
+   * { reachable, error }. Resolves rather than throws.
+   */
+  async probe({ timeoutMs = 3000 } = {}) {
+    try {
+      const probeClient = new OpenAI({
+        apiKey: this.apiKey || 'local',
+        baseURL: this.baseUrl,
+        timeout: timeoutMs,
+        maxRetries: 0,
+      });
+      await probeClient.models.list();
+      return { reachable: true };
+    } catch (err) {
+      return { reachable: false, error: err.message, code: err.code, status: err.status || err.statusCode };
+    }
+  }
+
+  /**
    * @param {object} opts
    * @param {Array} opts.messages
    * @param {Array} [opts.tools] - OpenAI-style function tool schemas

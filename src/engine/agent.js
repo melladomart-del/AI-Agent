@@ -66,9 +66,15 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
   async run(task, opts = {}) {
     this.bus.emit('task:start', { task });
 
+    this.bus.emit('phase', { phase: 'SELECTING CONTEXT' });
     const context = this.contextSelector.build(task);
+    this.bus.emit('context:built', { experiencesCount: context.experiences ? context.experiences.length : 0 });
+    if (context.experiences && context.experiences.length) {
+      this.bus.emit('memory:retrieve', { experiences: context.experiences });
+    }
     let plan = '';
     if (!opts.resume && this.planner) {
+      this.bus.emit('phase', { phase: 'PLANNING' });
       try {
         const plannerInput = this.contextSelector.buildForPlanner(task);
         plan = await this.planner.plan(plannerInput);
@@ -76,6 +82,7 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
         plan = `(planning skipped: ${err.message})`;
       }
     }
+    this.bus.emit('phase', { phase: 'EXECUTING' });
 
     const messages = [
       { role: 'system', content: this._systemPrompt(plan, context) },
@@ -93,6 +100,7 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
 
     for (let step = 0; step < this.config.maxSteps; step++) {
       this.bus.emit('step:start', { step });
+      this.bus.emit('phase', { phase: 'THINKING', iteration: step + 1, maxIterations: this.config.maxSteps });
       let message;
       try {
         message = await this.modelRouter.complete({
@@ -173,8 +181,12 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
     // Verification + auto-correction, unless this was a resumed correction run.
     let verified = null;
     if (!opts.resume && finished) {
+      this.bus.emit('phase', { phase: 'VERIFYING' });
+      this.bus.emit('verify:start', {});
       verified = await this.verifier.verify({ verifyCommand: opts.verifyCommand });
+      this.bus.emit('verify:result', { passed: verified.passed });
       if (!verified.passed && this.corrector) {
+        this.bus.emit('phase', { phase: 'CORRECTING' });
         const correction = await this.corrector.correct({
           failureOutput: verified.output,
           task,
@@ -183,6 +195,7 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
         verified = { passed: correction.fixed, output: correction.finalOutput };
       }
     }
+    this.bus.emit('phase', { phase: verified ? (verified.passed ? 'COMPLETED' : 'FAILED') : 'COMPLETED' });
 
     const result = {
       ok: finished,
@@ -197,7 +210,7 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
     if (!opts.resume) {
       try {
         const score = verified ? (verified.passed ? 1 : -1) : 0;
-        this.memory.record({
+        const experience = {
           task,
           plan,
           actions: actions.map((a) => a.name),
@@ -206,7 +219,9 @@ ${context.experiences ? 'Relevant past experiences:\n' + context.experiences + '
           result: verified ? (verified.passed ? 'passed' : 'failed') : 'unknown',
           score,
           tags: task.toLowerCase().split(/\W+/).filter((w) => w.length >= 3).slice(0, 8),
-        });
+        };
+        this.memory.record(experience);
+        this.bus.emit('memory:record', { result: experience.result, score });
       } catch {
         // memory must never break the agent
       }
