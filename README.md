@@ -52,6 +52,45 @@ the call in prose, use fenced JSON, or get whitespace/escaping wrong in
 - The loop nudges prose-only turns back to tool use, and guards against repeated
   identical calls.
 
+## Terminal UI (TUI)
+
+`node index.js` (no task argument) opens the interactive TUI. It is a pure
+**observer** of the engine's EventBus: it prints a compact, streaming transcript
+of the agent's work as events arrive — no full-screen repaint, no heavy TUI
+framework, so it stays light on an old machine and robust under resize.
+
+On startup it prints the active model/backend/endpoint and probes the model
+server (3 s timeout). If the server is down it shows an actionable banner before
+you type a task, instead of hanging on a connection error.
+
+While the agent works you see, live:
+- the current **phase** (`SELECTING CONTEXT`, `PLANNING`, `EXECUTING`,
+  `VERIFYING`, `CORRECTING`, …) with iteration/tool/error counters;
+- each **tool call** as `▶ toolName  args` and a compact `✓`/`✗` result line
+  (test counts, exit status, file edits, search hits);
+- **verification** and **auto-correction** panels when tests fail;
+- **memory** panels when a relevant past experience is retrieved or a new one
+  is recorded;
+- a final `✓ Task completed successfully` / `✗ Task failed` line.
+
+Interactive commands (type at the `>` prompt):
+
+| Command        | Action                                              |
+|----------------|-----------------------------------------------------|
+| `/help`        | list commands                                       |
+| `/status`      | current task phase + counters                       |
+| `/model`       | active model, backend, endpoint and reachability    |
+| `/tools`       | registered agent tools                              |
+| `/memory`      | recent recorded experiences                         |
+| `/skills [task]` | skills available, with the ones relevant to a task marked |
+| `/clear`       | clear the screen                                    |
+| `/exit`        | quit                                                |
+
+`Ctrl-C` during a running task signals an abort and lets the current step
+finish; at the idle prompt it exits. Output is colour when writing to a TTY and
+plain text otherwise (respects `NO_COLOR`), so the same code is readable in CI
+logs.
+
 ## Architecture
 
 See `docs/ARCHITECTURE.md` for the full design and the rationale for which
