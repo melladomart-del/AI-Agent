@@ -6,8 +6,10 @@ const { normalizeMessage } = require('./tool-normalize');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * A single OpenAI-compatible backend (llama.cpp, Ollama, LM Studio, vLLM,
- * OpenRouter, OpenAI, ...). The agent engine never knows which one it is.
+ * A single OpenAI-compatible backend (llama.cpp, LM Studio, vLLM, OpenRouter,
+ * OpenAI, or Ollama's OpenAI endpoint as an optional compatibility backend).
+ * The agent engine never knows which one it is -- it only speaks the
+ * OpenAI-compatible HTTP API, so any conformant local server works.
  *
  * Responsibilities:
  *   - call the backend via the OpenAI SDK

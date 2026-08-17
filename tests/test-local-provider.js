@@ -51,7 +51,7 @@ const skip = skipReason || undefined;
 
 test('local endpoint is reachable', { skip }, async () => {
   const ok = await isReachable(baseUrl);
-  if (!ok) throw new Error(`Local model server not reachable at ${baseUrl}. Start it (e.g. llama-server / ollama serve) and set LOCAL_MODEL_BASE_URL.`);
+  if (!ok) throw new Error(`Local model server not reachable at ${baseUrl}. Start your OpenAI-compatible local server (e.g. llama-server) and set LOCAL_MODEL_BASE_URL.`);
   assert.equal(ok, true);
 });
 

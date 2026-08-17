@@ -6,7 +6,13 @@ const path = require('path');
 const DEFAULTS = {
   MODEL_PROVIDER: 'local',
   LOCAL_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1',
-  LOCAL_MODEL_NAME: 'qwen2.5-coder:3b',
+  // Generic model id for an OpenAI-compatible LOCAL server (llama.cpp, LM
+  // Studio, vLLM, ...). This is NOT an Ollama `name:tag` (no colon): it must
+  // match whatever model id the local server exposes. Set LOCAL_MODEL_NAME to
+  // your server's model id (e.g. the GGUF filename for llama.cpp, or the alias
+  // you configured). Ollama is an optional compatibility backend, never the
+  // default execution path.
+  LOCAL_MODEL_NAME: 'qwen2.5-coder-1.5b-instruct',
   LOCAL_MODEL_API_KEY: 'local',
   CLOUD_MODEL_BASE_URL: 'https://openrouter.ai/api/v1',
   CLOUD_MODEL_NAME: 'openrouter/auto',

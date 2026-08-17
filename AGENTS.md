@@ -77,5 +77,29 @@ local server.
   whose exit code is the real verdict - works identically inside and outside
   the runner.
 
+## Provider routing (LOCAL is the real default)
+- `MODEL_PROVIDER=local` (default) makes `ModelRouter._primary()` return the
+  `local` Provider — a generic OpenAI-compatible HTTP client pointed at
+  `LOCAL_MODEL_BASE_URL` (default `http://127.0.0.1:8080/v1`). There is NO
+  Ollama-specific provider in the execution path. `LOCAL_MODEL_NAME` is sent
+  verbatim to the endpoint and shown verbatim in the TUI header — it must
+  match the server's model id (NOT an Ollama `name:tag` with a colon).
+- Ollama is only ever reached if the USER explicitly points
+  `LOCAL_MODEL_BASE_URL` at `http://127.0.0.1:11434/v1`. `src/tui/render.js`
+  `backendLabel()` merely labels such a URL "Ollama"; it never selects it.
+- `cloudFallback` falls back ONLY to a configured cloud API key, never to
+  Ollama. A dead local endpoint throws a connection error rather than
+  silently succeeding or rerouting.
+- Regression coverage: `tests/test-provider-routing.js` (real ModelRouter +
+  Provider, mocked HTTP) asserts local selection, configured URL/model sent,
+  no `:11434`, no silent fallback. `tests/test-tui-e2e.js` drives the REAL
+  TUI→Agent→Orchestrator→ModelRouter→(mock)endpoint stack and asserts the
+  header + real tool/verify/memory flow end to end.
+- **TUI color pitfall**: `src/tui/render.js` `colorEnabled()` keys off
+  `process.stdout.isTTY` (global), NOT the TUI's injected output stream. So
+  when a test captures output into a non-TTY stream but the test runner's
+  stdout IS a TTY, the captured text contains ANSI codes. TUI tests must set
+  `NO_COLOR=1` (and clean it up) for ANSI-stable string assertions.
+
 ## See `docs/ARCHITECTURE.md` for the foundation decision (OpenHands + Aider +
 OpenCode concepts, implemented natively rather than imported wholesale).

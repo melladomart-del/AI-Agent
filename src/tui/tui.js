@@ -37,12 +37,13 @@ class TUI {
 
   async start() {
     this._wireEvents();
-    this._print(R.header(this.orch.config));
-    this._print('');
 
-    // Show model availability up front so the user gets an actionable message
-    // instead of submitting a task that will hang on a connection error.
+    // Probe the model up front so the header's Status line reflects reality,
+    // and so the user gets an actionable message instead of submitting a task
+    // that will hang on a connection error.
     const probe = await this._probeModel();
+    this._print(R.header(this.orch.config, probe));
+    this._print('');
     if (!probe.reachable) {
       this._print(R.modelUnavailable(probe));
       this._print('');

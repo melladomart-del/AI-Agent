@@ -55,14 +55,19 @@ function backendLabel(config) {
   return 'llama.cpp';
 }
 
-function header(config) {
+function header(config, probe) {
   const model = config.provider === 'cloud' ? config.cloud.model : config.local.model;
   const endpoint = config.provider === 'cloud' ? config.cloud.baseUrl : config.local.baseUrl;
+  const reachable = probe ? !!probe.reachable : null;
+  const status = reachable === null
+    ? paint('yellow', '○ UNKNOWN')
+    : reachable ? paint('green', '● CONNECTED') : paint('red', '● DISCONNECTED');
   const lines = [
     `${bold(paint('cyan', 'AI CODING AGENT'))}`,
-    `${dim('Model')}   ${model}`,
-    `${dim('Backend')} ${backendLabel(config)}`,
+    `${dim('Model')}    ${model}`,
+    `${dim('Backend')}  ${backendLabel(config)}`,
     `${dim('Endpoint')} ${endpoint}`,
+    `${dim('Status')}   ${status}`,
   ];
   return box(lines, null);
 }

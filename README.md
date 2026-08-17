@@ -19,10 +19,10 @@ npm test                # run the test suite
 
 The agent talks to any **OpenAI-compatible** endpoint, so you can use:
 
-- `llama.cpp` server (`/v1`)
-- Ollama's OpenAI-compatible endpoint (optional, not a hard dependency)
+- `llama.cpp` server (`/v1`) — the default / target backend
 - LM Studio
 - vLLM
+- Ollama's OpenAI-compatible endpoint (optional compatibility backend; **not required**)
 - a cloud provider as an optional development fallback
 
 Configure via environment variables (see `.env.example`):
@@ -30,13 +30,14 @@ Configure via environment variables (see `.env.example`):
 ```
 MODEL_PROVIDER=local
 LOCAL_MODEL_BASE_URL=http://127.0.0.1:8080/v1
-LOCAL_MODEL_NAME=qwen2.5-coder:1.5b
+LOCAL_MODEL_NAME=qwen2.5-coder-1.5b-instruct
 ```
 
-Prefer small coding models that fit limited hardware. The agent has been
-validated end-to-end with **Qwen2.5-Coder-1.5B-Instruct** (Q4_K_M GGUF, ~1.1GB)
-served by `llama.cpp`/`llama-cpp-python`. `qwen2.5-coder:3b` via Ollama also
-works. Do not commit model files; they are served by your local backend.
+`LOCAL_MODEL_NAME` must match the model id your server exposes (NOT an Ollama
+`name:tag` with a colon). Prefer small coding models that fit limited hardware.
+The agent has been validated end-to-end with **Qwen2.5-Coder-1.5B-Instruct**
+(Q4_K_M GGUF, ~1.1GB) served by `llama.cpp`/`llama-cpp-python`. Do not commit
+model files; they are served by your local backend.
 
 ### Small-model hardening
 
