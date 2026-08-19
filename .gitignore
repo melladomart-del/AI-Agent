@@ -10,3 +10,6 @@ node_modules/
 *.gguf
 *.gguf.*
 models/
+
+# Runtime state managed by the `go` launcher (PID files, logs).
+.agent-runtime/

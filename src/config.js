@@ -32,6 +32,9 @@ const DEFAULTS = {
   PROTECTED_PATHS: '.env,*.pem,*.key,.git/**,node_modules/**',
   BLOCKED_COMMANDS: 'rm -rf /,sudo,shutdown,reboot,mkfs',
   LOG_LEVEL: 'info',
+  RUNTIME_DIR: '.agent-runtime',
+  MODEL_START_CMD: '',
+  MODEL_START_ARGS: '',
 };
 
 function loadEnvFile(rootDir) {
@@ -61,8 +64,26 @@ function toList(v) {
     .filter(Boolean);
 }
 
-function buildConfig() {
-  const fromFile = loadEnvFile();
+/**
+ * Resolve the project root: the directory containing package.json, searched
+ * upward from the given start dir (default cwd). Falls back to cwd. This lets
+ * the launcher and tools locate `.env`/`skills`/config regardless of where the
+ * process was invoked from.
+ */
+function projectRoot(startDir) {
+  let dir = path.resolve(startDir || process.cwd());
+  for (let i = 0; i < 20; i++) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(startDir || process.cwd());
+}
+
+function buildConfig(opts = {}) {
+  const root = opts.rootDir || projectRoot();
+  const fromFile = loadEnvFile(root);
   const get = (k) => process.env[k] ?? fromFile[k] ?? DEFAULTS[k];
   return {
     provider: get('MODEL_PROVIDER'),
@@ -91,8 +112,11 @@ function buildConfig() {
     protectedPaths: toList(get('PROTECTED_PATHS')),
     blockedCommands: toList(get('BLOCKED_COMMANDS')),
     logLevel: get('LOG_LEVEL'),
-    rootDir: get('AGENT_ROOT_DIR') || process.cwd(),
+    rootDir: get('AGENT_ROOT_DIR') || root,
+    runtimeDir: get('RUNTIME_DIR'),
+    modelStartCmd: get('MODEL_START_CMD'),
+    modelStartArgs: get('MODEL_START_ARGS'),
   };
 }
 
-module.exports = { buildConfig, DEFAULTS };
+module.exports = { buildConfig, projectRoot, DEFAULTS };

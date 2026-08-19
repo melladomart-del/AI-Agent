@@ -11,18 +11,37 @@ local server.
   TUI entry point is `node index.js` (one-shot: `node index.js "task"`). There
   is NO `tui/index.mjs` file; the documented entry is `package.json` `scripts.tui`
   = `node index.js`. `agent.js` is a backward-compatible shim to `index.js`.
+- **Launcher**: `go` (repo-root wrapper) → `bin/go.js` is the service manager.
+  Subcommands: `go` (start + TUI), `go start|stop|restart|status|logs|doctor`.
+  It resolves the project root itself (works from any dir), uses a real health
+  probe (`/v1/models`) — a service is READY only after the probe passes, never
+  just because a PID exists — and prevents double-starts via a PID file under
+  `.agent-runtime/` (gitignored). `MODEL_START_CMD`/`MODEL_START_ARGS` (env)
+  optionally let `go` spawn the model server; otherwise `go` only probes and
+  reports what's missing. `install.sh` sets up deps + `.env` + a global `go`
+  symlink in `~/.local/bin`.
 - Stack: Node.js (CommonJS). Runtime deps: only `openai` + `dotenv`. Tests use
   the built-in `node:test` runner (`node --test tests/`). **Do not add heavy
   runtime or test dependencies.**
-- Entry: `node index.js "task"` (one-shot) or `node index.js` (TUI). `agent.js`
-  is a backward-compatible shim to `index.js`.
+- Entry: `go` (recommended; auto-manages services + TUI), `node index.js
+  "task"` (one-shot), or `node index.js` (TUI). `agent.js` is a backward-compatible
+  shim to `index.js`.
 - Config via env / `.env` (see `.env.example`). `MODEL_PROVIDER=local` +
   `LOCAL_MODEL_BASE_URL` point at any OpenAI-compatible server (llama.cpp,
   Ollama optional, LM Studio, vLLM). Ollama is NOT a hard dependency.
+  `src/config.js` `buildConfig()` resolves the project root by searching upward
+  for `package.json`, so `.env` is loaded from the project root (not `cwd`) and
+  `config.rootDir` is the project root — tools/paths anchor there correctly
+  regardless of where the process was launched from.
 - The model engine only calls `modelRouter.complete(...)`; it never knows the
   backend. Add backends in `src/providers/`.
 
 ## Architecture map
+- `go` + `bin/go.js` — launcher + service manager (`go start|stop|restart|status|logs|doctor`).
+  Health-probe-based readiness (READY only after `/v1/models` responds), PID file
+  in `.agent-runtime/`, no double-start, no orphans on shutdown. `install.sh`
+  sets up deps + `.env` + a global `go` symlink in `~/.local/bin`.
+- `index.js` — entry point (one-shot task via `node index.js "task"`, or TUI).
 - `src/engine/agent.js` — action/observation loop (OpenHands-style).
 - `src/engine/orchestrator.js` — composes all subsystems (the kernel).
 - `src/engine/repo-analyzer.js` — token-budgeted symbol repo map (Aider-style,
