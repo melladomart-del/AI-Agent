@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# klyvia — the official KLYVIA launcher wrapper.
+# Resolves symlinks so `klyvia` works globally (via an install.sh symlink in
+# ~/.local/bin) as well as via `./klyvia` from the repo root.
+# `go` and `GO` are aliased to this same launcher.
+set -e
+src="${BASH_SOURCE[0]}"
+# Follow symlinks to the real file so SCRIPT_DIR is the app root regardless of
+# how `klyvia` was invoked (global symlink, ./klyvia, etc.).
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in
+    /*) : ;;
+    *) src="$dir/$src" ;;
+  esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+exec node "${SCRIPT_DIR}/bin/go.js" "$@"

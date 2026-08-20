@@ -11,23 +11,36 @@ local server.
   TUI entry point is `node index.js` (one-shot: `node index.js "task"`). There
   is NO `tui/index.mjs` file; the documented entry is `package.json` `scripts.tui`
   = `node index.js`. `agent.js` is a backward-compatible shim to `index.js`.
-- **Launcher**: `go` / `GO` (repo-root wrapper) → `bin/go.js` is the service manager.
-  Subcommands: `go` (start + TUI), `go start|stop|restart|status|logs|doctor`.
-  `GO` (uppercase) works too (install.sh symlinks both into ~/.local/bin; Linux
-  is case-sensitive). It resolves the project root itself (works from any dir),
-  uses a real health probe (`/v1/models`) — a service is READY only after the
-  probe passes, never just because a PID exists — and prevents double-starts via
-  a PID file under `.agent-runtime/` (gitignored). Start-command resolution:
-  (1) `MODEL_START_CMD`+`MODEL_START_ARGS` (any server, full control), or
-  (2) llama.cpp auto-build from `LLAMA_BIN` (or auto-detected
-  `llama`/`llama-server`/`~/.local/bin/llama`) + `MODEL_PATH` (.gguf), deriving
-  host/port from `LOCAL_MODEL_BASE_URL` and context from `LLAMA_CONTEXT`.
-  `install.sh` sets up deps + `.env` + global `go`/`GO` symlinks in
-  `~/.local/bin`, detects llama.cpp, and runs `go doctor`.
+- **Launcher**: `klyvia` is the official command; `go` and `GO` are aliased to
+  it (same `bin/go.js`, symlink-resolving bash wrappers). Subcommands:
+  `klyvia` (start backend + TUI), `start|stop|restart|status|logs|doctor|config|
+  update|uninstall|help|--version`. `GO` (uppercase) works too (Linux is
+  case-sensitive → install.sh symlinks `klyvia`, `go`, `GO` into ~/.local/bin).
+  It resolves the app root itself (works from any dir), uses a real health probe
+  (`/v1/models`) — a service is READY only after the probe passes, never just
+  because a PID exists — prevents double-starts via a PID file, and reaps the
+  server on exit (SIGTERM → SIGKILL, no orphans). Start-command resolution:
+  (1) `MODEL_START_CMD`+`MODEL_START_ARGS`, or (2) llama.cpp auto-build from
+  `LLAMA_BIN` (auto-detected) + `MODEL_PATH` (.gguf). **`KLYVIA_MODE`**
+  (`local`/`remote`/`auto`) selects the backend: `remote` fails hard if the
+  server is down; `auto` falls back to local with a clear message.
+- **Install layout**: managed install = `~/.klyvia/{app,config,runtime}`;
+  `install.sh` supports curl-pipe (`curl … | bash`) and in-place (`./install.sh`).
+  Config (`~/.klyvia/config/config.env`) survives `klyvia update`; runtime is
+  ephemeral. `klyvia uninstall` keeps config + models by default (`--purge` to
+  remove config). Distribution branch: `feat/local-coding-agent`.
+- **`rootDir` vs `appRoot`** (CRITICAL): `rootDir` = the user's PROJECT (cwd) —
+  the thing the agent reads/edits (repo-analyzer, tools, per-project memory).
+  `appRoot` = where KLYVIA's code/skills/.env live (install dir or dev clone).
+  `buildConfig({ rootDir, appRoot })`; the launcher sets `KLYVIA_APP_ROOT` env
+  so the child `index.js` finds bundled skills even when cwd is an unrelated
+  project. `ContextSelector` loads skills from `appRoot/skills`, keeps
+  repo/memory on `rootDir`. NEVER point rootDir at the install dir — that would
+  make the agent edit its own code instead of the user's project.
 - Stack: Node.js (CommonJS). Runtime deps: only `openai` + `dotenv`. Tests use
   the built-in `node:test` runner (`node --test tests/`). **Do not add heavy
   runtime or test dependencies.**
-- Entry: `go` (recommended; auto-manages services + TUI), `node index.js
+- Entry: `klyvia` (recommended; auto-manages backend + TUI), `node index.js
   "task"` (one-shot), or `node index.js` (TUI). `agent.js` is a backward-compatible
   shim to `index.js`.
 - Config via env / `.env` (see `.env.example`). `MODEL_PROVIDER=local` +

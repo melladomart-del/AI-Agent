@@ -231,3 +231,147 @@ test('startModelServer with MODEL_PATH (missing file) and a dead endpoint gives 
   assert.match(res.error, /MODEL_PATH/, 'error must guide the user to set MODEL_PATH');
   resetRuntime(cfg);
 });
+
+// --- KLYVIA mode resolution tests ---
+
+test('resolveBackend: KLYVIA_MODE=local always uses the local backend', async () => {
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.klyviaMode = 'local';
+  cfg.klyviaServerUrl = 'http://127.0.0.1:9999/v1';
+  const b = await go.resolveBackend(cfg);
+  assert.equal(b.backend, 'local');
+});
+
+test('resolveBackend: KLYVIA_MODE=remote fails hard when the server is unreachable', async () => {
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.klyviaMode = 'remote';
+  cfg.klyviaServerUrl = 'http://127.0.0.1:65534/v1'; // nothing listening
+  const b = await go.resolveBackend(cfg);
+  assert.equal(b.backend, 'remote');
+  assert.equal(b.reachable, false);
+  assert.match(b.reason, /remote but server.*unreachable/i, 'must explain the failure, not silently fall back');
+});
+
+test('resolveBackend: KLYVIA_MODE=remote fails hard when KLYVIA_SERVER_URL is unset', async () => {
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.klyviaMode = 'remote';
+  cfg.klyviaServerUrl = '';
+  const b = await go.resolveBackend(cfg);
+  assert.equal(b.backend, 'remote');
+  assert.equal(b.reachable, false);
+  assert.match(b.reason, /KLYVIA_SERVER_URL is not set/i);
+});
+
+test('resolveBackend: KLYVIA_MODE=auto falls back to local when the server is down', async () => {
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.klyviaMode = 'auto';
+  cfg.klyviaServerUrl = 'http://127.0.0.1:65534/v1';
+  const b = await go.resolveBackend(cfg);
+  assert.equal(b.backend, 'local', 'auto must fall back to local when the server is down');
+  assert.match(b.reason, /falling back to local/i, 'must clearly explain the fallback');
+});
+
+test('resolveBackend: KLYVIA_MODE=auto uses remote when the server is reachable', async () => {
+  const srv = makeHealthyServer();
+  const port = await startServer(srv);
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.klyviaMode = 'auto';
+  cfg.klyviaServerUrl = `http://127.0.0.1:${port}/v1`;
+  const b = await go.resolveBackend(cfg);
+  assert.equal(b.backend, 'remote');
+  assert.equal(b.reachable, true);
+  srv.close();
+});
+
+test('resolveBackend: auto with no server configured uses local', async () => {
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.klyviaMode = 'auto';
+  cfg.klyviaServerUrl = '';
+  const b = await go.resolveBackend(cfg);
+  assert.equal(b.backend, 'local');
+  assert.match(b.reason, /no KLYVIA_SERVER_URL/i);
+});
+
+// --- config masking test ---
+
+test('cmdConfig masks API keys and never prints them in full', async () => {
+  const cfg = cfgFor('http://127.0.0.1:8080/v1');
+  cfg.klyviaApiKey = 'sk-supersecret-key-1234567890';
+  const captured = [];
+  const write = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (s) => { captured.push(String(s)); return true; };
+  try {
+    await go.cmdConfig(cfg);
+  } finally {
+    process.stdout.write = write;
+  }
+  const out = captured.join('');
+  assert.doesNotMatch(out, /supersecret/, 'the full secret must never appear in config output');
+  assert.match(out, /hidden|set/i, 'the key presence is indicated without revealing it');
+});
+
+// --- welcome banner test ---
+
+test('welcomeBanner renders a KLYVIA box with backend + status', () => {
+  const cfg = cfgFor('http://127.0.0.1:8080/v1');
+  cfg.local.model = 'qwen2.5-coder';
+  const banner = go.welcomeBanner(cfg, { backend: 'local' }, { ok: true });
+  assert.match(banner, /K L Y V I A/i);
+  assert.match(banner, /llama\.cpp/);
+  assert.match(banner, /qwen2\.5-coder/);
+  // A boxed banner has top and bottom borders.
+  assert.match(banner, /╭[─]+╮/);
+  assert.match(banner, /╰[─]+╯/);
+});
+
+// --- version + managed-install detection ---
+
+test('readVersion returns the package.json version', () => {
+  const v = go.readVersion();
+  assert.match(v, /^\d+\.\d+\.\d+/, 'version looks like semver');
+});
+
+test('isManagedInstall returns false for a dev clone (APP_ROOT != ~/.klyvia/app)', () => {
+  // The test runs from the repo, which is NOT ~/.klyvia/app, so this is a dev clone.
+  assert.equal(go.isManagedInstall(), false);
+});
+
+// --- uninstall logic test (non-interactive, --yes, no purge) ---
+
+test('cmdUninstall with --yes removes app + runtime + symlinks but keeps config', async () => {
+  // Build a fake managed install in a temp HOME so we don't touch the real one.
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'klyvia-uninstall-'));
+  const oldHome = process.env.HOME;
+  process.env.HOME = tmpHome;
+  const fakeApp = path.join(tmpHome, '.klyvia', 'app');
+  const fakeConfigDir = path.join(tmpHome, '.klyvia', 'config');
+  const fakeRuntime = path.join(tmpHome, '.klyvia', 'runtime');
+  fs.mkdirSync(path.join(fakeApp, 'bin'), { recursive: true });
+  fs.mkdirSync(fakeConfigDir, { recursive: true });
+  fs.mkdirSync(fakeRuntime, { recursive: true });
+  fs.writeFileSync(path.join(fakeConfigDir, 'config.env'), 'KLYVIA_MODE=auto\nMODEL_PATH=/keep/me.gguf\n');
+  fs.writeFileSync(path.join(fakeApp, 'package.json'), '{}');
+  const binDir = path.join(tmpHome, '.local', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  for (const n of ['klyvia', 'go', 'GO']) fs.writeFileSync(path.join(binDir, n), 'link');
+  try {
+    const cfg = cfgFor('http://127.0.0.1:65535/v1');
+    const captured = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (s) => { captured.push(String(s)); return true; };
+    try {
+      const ok = await go.cmdUninstall(cfg, ['--yes']);
+      assert.equal(ok, true);
+    } finally {
+      process.stdout.write = write;
+    }
+    assert.equal(fs.existsSync(fakeApp), false, 'app code removed');
+    assert.equal(fs.existsSync(fakeRuntime), false, 'runtime removed');
+    assert.equal(fs.existsSync(path.join(binDir, 'klyvia')), false, 'symlink removed');
+    assert.equal(fs.existsSync(path.join(fakeConfigDir, 'config.env')), true, 'config preserved by default');
+  } finally {
+    process.env.HOME = oldHome;
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+});
+

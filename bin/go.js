@@ -27,10 +27,25 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFileSync, execSync } = require('child_process');
 
-const ROOT = path.resolve(__dirname, '..');
-const { buildConfig } = require(path.join(ROOT, 'src', 'config'));
+// APP_ROOT = where KLYVIA's own code/skills/.env live (the install dir or the
+// dev clone). WORK_DIR = the user's current project (cwd) — the thing the agent
+// should read/edit. Keeping these separate is what lets a globally-installed
+// `klyvia` target the user's project instead of its own install directory.
+const APP_ROOT = path.resolve(__dirname, '..');
+const WORK_DIR = process.cwd();
+const { buildConfig } = require(path.join(APP_ROOT, 'src', 'config'));
+
+// Official repo + distribution branch for `klyvia update` and curl-pipe install.
+// The branch is real (verified): the launcher work lives on feat/local-coding-agent.
+const KLYVIA_REPO = process.env.KLYVIA_REPO || 'melladomart-del/AI-Agent';
+const KLYVIA_BRANCH = process.env.KLYVIA_BRANCH || 'feat/local-coding-agent';
+const KLYVIA_HOME = path.join(process.env.HOME || '', '.klyvia');
+const KLYVIA_APP_INSTALL = path.join(KLYVIA_HOME, 'app');
+const KLYVIA_CONFIG_DIR = path.join(KLYVIA_HOME, 'config');
+const KLYVIA_CONFIG_FILE = path.join(KLYVIA_CONFIG_DIR, 'config.env');
+const KLYVIA_RUNTIME = path.join(KLYVIA_HOME, 'runtime');
 
 // ANSI helpers (disabled when not a TTY or NO_COLOR set).
 const C = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -43,9 +58,12 @@ const bold = (s) => c('1', s);
 
 function log(msg) { process.stdout.write(msg + '\n'); }
 
-// Resolve the runtime dir under the project root (gitignored).
+// Resolve the runtime dir. For a managed install (~/.klyvia/app) this is
+// ~/.klyvia/runtime (set as an absolute RUNTIME_DIR by install.sh). For a dev
+// clone it stays under the app root (.agent-runtime, gitignored).
 function runtimeDir(cfg) {
-  const dir = path.resolve(cfg.rootDir, cfg.runtimeDir || '.agent-runtime');
+  const rd = cfg.runtimeDir || '.agent-runtime';
+  const dir = path.isAbsolute(rd) ? rd : path.resolve(cfg.appRoot || cfg.rootDir, rd);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -107,7 +125,6 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
  * location). Returns the resolved path or null. Never assumes a path exists.
  */
 function findLlamaBin(cfg) {
-  const { execSync } = require('child_process');
   const tryPath = (p) => { try { if (p && fs.existsSync(p) && fs.accessSync(p, fs.constants.X_OK) === undefined) return p; } catch { /* ignore */ } return null; };
   if (cfg.llamaBin) {
     const found = tryPath(cfg.llamaBin);
@@ -228,10 +245,72 @@ function sleepSync(ms) {
   while (Date.now() < deadline) { /* spin briefly */ }
 }
 
+// --- KLYVIA mode resolution ---
+// local  : only the local backend (llama.cpp). Auto-start it if possible.
+// remote : require KLYVIA_SERVER_URL; if unreachable, fail hard (no silent local).
+// auto   : if KLYVIA_SERVER_URL is set AND reachable, use remote; else local.
+// Returns { backend: 'local'|'remote', url, reachable, reason }.
+async function resolveBackend(cfg) {
+  const mode = cfg.klyviaMode;
+  const serverUrl = cfg.klyviaServerUrl;
+  if (mode === 'local') return { backend: 'local', reachable: false, reason: 'KLYVIA_MODE=local' };
+  if (serverUrl) {
+    const probe = await probeEndpoint(serverUrl, { timeoutMs: 3000 });
+    if (probe.ok) return { backend: 'remote', url: serverUrl, reachable: true, reason: 'KLYVIA server reachable' };
+    if (mode === 'remote') {
+      return { backend: 'remote', url: serverUrl, reachable: false, reason: `KLYVIA_MODE=remote but server ${serverUrl} is unreachable (${probe.error})` };
+    }
+    // auto: server configured but down → fall back to local (and say so).
+    return { backend: 'local', reachable: false, reason: `KLYVIA server unreachable (${probe.error}); falling back to local backend` };
+  }
+  // No server configured.
+  if (mode === 'remote') {
+    return { backend: 'remote', reachable: false, reason: 'KLYVIA_MODE=remote but KLYVIA_SERVER_URL is not set' };
+  }
+  return { backend: 'local', reachable: false, reason: 'no KLYVIA_SERVER_URL configured; using local backend' };
+}
+
+// A compact welcome banner printed before the TUI. Pure formatting, no I/O side
+// effects beyond writing to stdout.
+function welcomeBanner(cfg, backend, probe) {
+  const model = backend.backend === 'remote' ? '(remote server)' : (cfg.local.model || '—');
+  const backendLabel = backend.backend === 'remote' ? 'KLYVIA server' : 'llama.cpp';
+  const status = probe && probe.ok
+    ? green('● CONNECTED')
+    : (backend.backend === 'remote' ? red('● DISCONNECTED') : yellow('○ STARTING'));
+  const lines = [
+    `${bold(c('cyan', 'K L Y V I A'))}  ${dim('· local AI coding agent')}`,
+    `${dim('Backend')}  ${backendLabel}`,
+    `${dim('Model')}    ${model}`,
+    `${dim('Status')}   ${status}`,
+  ];
+  const inner = Math.max(...lines.map((l) => stripAnsi(l).length)) + 2;
+  const top = `╭${'─'.repeat(inner)}╮`;
+  const bot = `╰${'─'.repeat(inner)}╯`;
+  const mid = lines.map((l) => `│ ${l}${' '.repeat(Math.max(0, inner - stripAnsi(l).length - 1))}│`);
+  return [top, ...mid, bot].join('\n');
+}
+function stripAnsi(s) { return String(s).replace(/\x1b\[[0-9;]*m/g, ''); }
+
 // Subcommand implementations -------------------------------------------------
 
 async function cmdStart(cfg) {
-  log(bold('Starting services…'));
+  const backend = await resolveBackend(cfg);
+  log(bold('Starting services…') + dim(`  (mode: ${cfg.klyviaMode})`));
+  if (backend.backend === 'remote') {
+    if (!backend.reachable) {
+      log(red('✗') + ' KLYVIA server required but unavailable.');
+      log(dim(backend.reason));
+      log(dim('Set KLYVIA_MODE=auto to fall back to the local backend, or start the KLYVIA server.'));
+      return false;
+    }
+    log(green('✓') + ` KLYVIA server READY at ${backend.url}`);
+    return true;
+  }
+  // local backend
+  if (backend.reason && backend.reason.includes('falling back')) {
+    log(yellow('•') + ' ' + backend.reason);
+  }
   const res = await startModelServer(cfg);
   if (res.ready) { log(green('✓') + ` model server READY at ${cfg.local.baseUrl}`); return true; }
   log(red('✗') + ' model server NOT ready');
@@ -255,19 +334,29 @@ async function cmdRestart(cfg) {
 }
 
 async function cmdStatus(cfg) {
+  const backend = await resolveBackend(cfg);
+  if (backend.backend === 'remote') {
+    log(bold('Service status'));
+    log(`  Agent    ${green('READY')}`);
+    log(`  Backend  ${backend.reachable ? green('READY') : red('UNREACHABLE')}  ${dim('(remote)')}`);
+    log(`  Server   ${cfg.klyviaServerUrl}`);
+    log(`  Mode     ${cfg.klyviaMode}`);
+    log(`  Project  ${dim(cfg.rootDir)}`);
+    return backend.reachable;
+  }
   const probe = await probeEndpoint(cfg.local.baseUrl);
   const pid = readPid(cfg);
   const managedAlive = pid && isProcessAlive(pid);
   const llmState = probe.ok ? green('READY') : (managedAlive ? yellow('STARTING') : red('STOPPED'));
-  const agentState = green('READY');
   log(bold('Service status'));
-  log(`  Agent    ${agentState}`);
+  log(`  Agent    ${green('READY')}`);
   log(`  LLM      ${llmState}`);
-  log(`  TUI      ${dim('via `go`')}`);
+  log(`  Mode     ${cfg.klyviaMode}  ${dim('(local backend)')}`);
   log('');
   log(`  Endpoint ${cfg.local.baseUrl}`);
   log(`  Model    ${cfg.local.model}`);
-  log(`  PID      ${pid ? (managedAlive ? String(pid) + dim(' (alive)') : String(pid) + red(' (dead)')) : dim('— (not managed by go)')}`);
+  log(`  PID      ${pid ? (managedAlive ? String(pid) + dim(' (alive)') : String(pid) + red(' (dead)')) : dim('— (not managed by klyvia)')}`);
+  log(`  Project  ${dim(cfg.rootDir)}`);
   return probe.ok;
 }
 
@@ -292,26 +381,40 @@ async function cmdDoctor(cfg) {
 
   log(bold('KLYVIA doctor\n'));
   check('Node.js', true, `v${process.version.replace(/^v/, '')}`);
-  check('package.json', fs.existsSync(path.join(cfg.rootDir, 'package.json')), cfg.rootDir);
-  const nm = fs.existsSync(path.join(cfg.rootDir, 'node_modules'));
-  check('dependencies installed', nm, nm ? '' : 'run `npm install`');
-  const envFile = fs.existsSync(path.join(cfg.rootDir, '.env'));
-  check('configuration (.env)', envFile, envFile ? '' : 'using defaults; copy .env.example to .env');
-  const port = parsePort(cfg.local.baseUrl);
-  check('endpoint URL valid', port !== '?', cfg.local.baseUrl);
-  const probe = await probeEndpoint(cfg.local.baseUrl);
-  check('model endpoint reachable', probe.ok, probe.ok ? '' : (probe.error || 'no response'));
-  check('model name set', !!cfg.local.model, cfg.local.model || '(empty)');
-  if (cfg.modelStartCmd) check('MODEL_START_CMD set', true, cfg.modelStartCmd);
-  else {
-    const llamaBin = findLlamaBin(cfg);
-    check('llama.cpp binary', !!llamaBin, llamaBin ? llamaBin : 'not found on PATH or ~/.local/bin/llama (set LLAMA_BIN)');
-    const modelExists = cfg.modelPath && fs.existsSync(cfg.modelPath);
-    check('model file (MODEL_PATH)', !!modelExists, modelExists ? cfg.modelPath : (cfg.modelPath ? `${cfg.modelPath} (missing!)` : 'not set (set MODEL_PATH to your .gguf)'));
-    if (llamaBin && modelExists) check('auto-start ready', true, dim('go can start llama.cpp for you'));
+  check('KLYVIA app code', fs.existsSync(path.join(APP_ROOT, 'package.json')), APP_ROOT);
+  const nm = fs.existsSync(path.join(APP_ROOT, 'node_modules'));
+  check('dependencies installed', nm, nm ? '' : 'run `npm install` in the app dir');
+  const envFile = fs.existsSync(path.join(APP_ROOT, '.env'));
+  // Configuration absence is informational, not a failure: the app runs with
+  // defaults. Only flag a hard failure if deps/code are missing.
+  log(`${envFile ? green('✓') : yellow('•')} configuration (.env)${envFile ? '' : dim('  using defaults; run `klyvia config` or copy .env.example')}`);
+  check('install type', true, isManagedInstall() ? `managed (~/.klyvia/app)` : 'dev clone');
+  check('working project (cwd)', true, cfg.rootDir);
+
+  // KLYVIA mode + remote server
+  const backend = await resolveBackend(cfg);
+  check('KLYVIA_MODE', true, `${cfg.klyviaMode} → backend: ${backend.backend}`);
+  if (cfg.klyviaServerUrl) {
+    check('KLYVIA server reachable', backend.reachable, backend.reason);
+  }
+
+  // Local backend checks (only relevant when local is in play)
+  if (backend.backend !== 'remote' || !backend.reachable) {
+    const port = parsePort(cfg.local.baseUrl);
+    check('local endpoint URL valid', port !== '?', cfg.local.baseUrl);
+    const probe = await probeEndpoint(cfg.local.baseUrl);
+    check('local model endpoint reachable', probe.ok, probe.ok ? '' : (probe.error || 'no response'));
+    check('model name set', !!cfg.local.model, cfg.local.model || '(empty)');
+    if (cfg.modelStartCmd) check('MODEL_START_CMD set', true, cfg.modelStartCmd);
+    else {
+      const llamaBin = findLlamaBin(cfg);
+      check('llama.cpp binary', !!llamaBin, llamaBin ? llamaBin : 'not found on PATH or ~/.local/bin/llama (set LLAMA_BIN)');
+      const modelExists = cfg.modelPath && fs.existsSync(cfg.modelPath);
+      check('model file (MODEL_PATH)', !!modelExists, modelExists ? cfg.modelPath : (cfg.modelPath ? `${cfg.modelPath} (missing!)` : 'not set (set MODEL_PATH to your .gguf)'));
+      if (llamaBin && modelExists) check('auto-start ready', true, dim('klyvia can start llama.cpp for you'));
+    }
   }
   check('safety guard configured', cfg.protectedPaths.length > 0, `${cfg.protectedPaths.length} protected patterns`);
-  if (String(port) === '11434') log(yellow('•') + dim(' note: port 11434 is Ollama; fine only if intended'));
 
   log('');
   log(ok ? green('All critical checks passed.') : red('Some checks failed — see above.'));
@@ -321,35 +424,196 @@ async function cmdDoctor(cfg) {
 async function cmdTui(cfg) {
   const started = await cmdStart(cfg);
   if (!started) {
-    log(red('\nRefusing to launch the TUI: the model endpoint is not ready.'));
-    log(dim('Fix the above and run `go` again, or run `go doctor`.'));
+    log(red('\nRefusing to launch the TUI: the model backend is not ready.'));
+    log(dim('Fix the above and run `klyvia` again, or run `klyvia doctor`.'));
     process.exit(1);
   }
+  const backend = await resolveBackend(cfg);
+  const probe = backend.backend === 'remote'
+    ? { ok: backend.reachable }
+    : await probeEndpoint(cfg.local.baseUrl);
+  log('');
+  log(welcomeBanner(cfg, backend, probe));
   log(bold('\nLaunching TUI…') + dim(' (CTRL+C to exit)\n'));
-  const tui = path.join(ROOT, 'index.js');
-  const child = spawn(process.execPath, [tui], { stdio: 'inherit', cwd: cfg.rootDir });
+  // Launch the TUI against the USER's project (WORK_DIR), not the app install
+  // dir. KLYVIA_APP_ROOT is exported so the child's buildConfig() can locate
+  // the bundled skills/.env even though cwd is the user's project.
+  const tui = path.join(APP_ROOT, 'index.js');
+  const child = spawn(process.execPath, [tui], {
+    stdio: 'inherit',
+    cwd: WORK_DIR,
+    env: { ...process.env, KLYVIA_APP_ROOT: APP_ROOT },
+  });
   const stop = () => { try { stopModelServer(cfg); } catch { /* ignore */ } };
   process.on('SIGINT', () => { child.kill('SIGINT'); });
   process.on('SIGTERM', () => { child.kill('SIGTERM'); });
   child.on('exit', (code) => { stop(); process.exit(code ?? 0); });
 }
 
-function usage() {
-  log(bold('Usage: go [command]\n'));
-  log('  go            start services + launch the TUI');
-  log('  go start      start the model server (if configured)');
-  log('  go stop       stop services managed by go');
-  log('  go restart    stop + start');
-  log('  go status     show service readiness');
-  log('  go logs       tail model-server logs');
-  log('  go doctor     run a diagnostic');
+// --- Install management helpers ---
+
+// A "managed install" is one cloned into ~/.klyvia/app by install.sh. A dev
+// clone (run from the repo) is NOT managed. `klyvia update`/`uninstall` only
+// operate on managed installs.
+function isManagedInstall() {
+  try { return path.resolve(APP_ROOT) === path.resolve(klyviaAppInstall()); }
+  catch { return false; }
+}
+
+function readVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf-8'));
+    return pkg.version || 'unknown';
+  } catch { return 'unknown'; }
+}
+
+function readInstallCommit() {
+  try { return execSync('git rev-parse --short HEAD', { cwd: APP_ROOT, encoding: 'utf-8', stdio: 'pipe' }).trim(); }
+  catch { return 'unknown'; }
+}
+
+// Print a config value, masking anything that looks like a secret key.
+function displayValue(key, val) {
+  if (!val) return dim('(empty)');
+  if (/API_KEY|TOKEN|SECRET|PASSWORD/i.test(key)) {
+    const s = String(val);
+    return s.length > 6 ? dim(s.slice(0, 3) + '…' + s.slice(-2) + ' (hidden)') : dim('(set)');
+  }
+  return val;
+}
+
+async function cmdConfig(cfg) {
+  log(bold('KLYVIA configuration\n'));
+  log(dim('Config source: ' + (fs.existsSync(path.join(APP_ROOT, '.env')) ? path.join(APP_ROOT, '.env') : 'defaults (no .env)')));
+  log(dim('Install type:  ' + (isManagedInstall() ? 'managed (~/.klyvia/app)' : 'dev clone')));
   log('');
-  log(dim('Run from any directory. Project root: ' + ROOT));
+  const rows = [
+    ['KLYVIA_MODE', cfg.klyviaMode],
+    ['KLYVIA_SERVER_URL', cfg.klyviaServerUrl],
+    ['KLYVIA_API_KEY', cfg.klyviaApiKey],
+    ['MODEL_PROVIDER', cfg.provider],
+    ['LOCAL_MODEL_BASE_URL', cfg.local.baseUrl],
+    ['LOCAL_MODEL_NAME', cfg.local.model],
+    ['MODEL_PATH', cfg.modelPath],
+    ['LLAMA_BIN', cfg.llamaBin || dim('(auto-detect)')],
+    ['LLAMA_CONTEXT', cfg.llamaContext],
+    ['LLAMA_HOST', cfg.llamaHost],
+  ];
+  for (const [k, v] of rows) {
+    log(`  ${dim(k.padEnd(22))} ${displayValue(k, v)}`);
+  }
+  log('');
+  log(dim('Edit these in: ' + (isManagedInstall() ? klyviaConfigFile() : path.join(APP_ROOT, '.env'))));
+  log(dim('Or set them as environment variables before running klyvia.'));
+}
+
+async function cmdUpdate(cfg) {
+  log(bold('KLYVIA update\n'));
+  if (!isManagedInstall()) {
+    log(yellow('This is a dev clone, not a managed install.'));
+    log(dim('To update, run: git pull && npm install'));
+    log(dim('To use the managed installer: curl -fsSL https://raw.githubusercontent.com/' + KLYVIA_REPO + '/' + KLYVIA_BRANCH + '/install.sh | bash'));
+    return false;
+  }
+  const oldCommit = readInstallCommit();
+  const oldVersion = readVersion();
+  log(dim('Current: v' + oldVersion + ' (' + oldCommit + ')'));
+  log(dim('Pulling from ' + KLYVIA_REPO + ':' + KLYVIA_BRANCH + '…'));
+  try {
+    execSync(`git fetch origin ${KLYVIA_BRANCH}`, { cwd: APP_ROOT, stdio: 'pipe' });
+    execSync(`git reset --hard origin/${KLYVIA_BRANCH}`, { cwd: APP_ROOT, stdio: 'pipe' });
+  } catch (e) {
+    log(red('✗ git update failed: ' + (e.stderr ? e.stderr.toString().trim() : e.message)));
+    return false;
+  }
+  log(dim('Installing dependencies…'));
+  try { execSync('npm install --silent', { cwd: APP_ROOT, stdio: 'pipe' }); }
+  catch (e) { log(yellow('• npm install reported warnings.')); }
+  const newCommit = readInstallCommit();
+  const newVersion = readVersion();
+  log(green('✓ updated.') + dim(`  v${oldVersion} (${oldCommit}) → v${newVersion} (${newCommit})`));
+  if (oldCommit === newCommit) log(dim('Already up to date.'));
+  log(dim('Your configuration was preserved.'));
+  return true;
+}
+
+// Resolve KLYVIA home paths dynamically (so HOME can be overridden in tests).
+function klyviaHome() { return path.join(process.env.HOME || '', '.klyvia'); }
+function klyviaAppInstall() { return path.join(klyviaHome(), 'app'); }
+function klyviaConfigDir() { return path.join(klyviaHome(), 'config'); }
+function klyviaConfigFile() { return path.join(klyviaConfigDir(), 'config.env'); }
+function klyviaRuntime() { return path.join(klyviaHome(), 'runtime'); }
+
+async function cmdUninstall(cfg, args = []) {
+  const purge = args.includes('--purge');
+  const yes = args.includes('--yes');
+  const APP = klyviaAppInstall();
+  const RUNTIME = klyviaRuntime();
+  const CONFIG_FILE = klyviaConfigFile();
+  log(bold('KLYVIA uninstall\n'));
+  log('This will remove:');
+  log('  • ' + APP + dim(' (the app code)'));
+  log('  • ' + RUNTIME + dim(' (runtime: pid, logs)'));
+  log('  • ~/.local/bin/{klyvia,go,GO} symlinks');
+  log('');
+  if (purge) {
+    log(red('  --purge: ALSO remove ' + CONFIG_FILE + dim(' (your configuration)')));
+  } else {
+    log(dim('Kept (not removed):'));
+    log(dim('  • ' + CONFIG_FILE + ' (your configuration)'));
+    log(dim('  • your .gguf models and llama.cpp'));
+    log(dim('  • your projects'));
+  }
+  log('');
+  if (!yes) {
+    const tty = process.stdin.isTTY;
+    if (!tty) {
+      log(red('Refusing to uninstall non-interactively without --yes.'));
+      return false;
+    }
+    process.stdout.write(yellow('Proceed? [y/N] '));
+    const ans = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+    const reply = await new Promise((r) => ans.question('', (a) => { ans.close(); r(a.trim().toLowerCase()); }));
+    if (reply !== 'y' && reply !== 'yes') { log('Aborted.'); return false; }
+  }
+  // Stop services first.
+  try { stopModelServer(cfg); } catch { /* ignore */ }
+  const binDir = path.join(process.env.HOME || '', '.local', 'bin');
+  for (const name of ['klyvia', 'go', 'GO']) {
+    try { fs.unlinkSync(path.join(binDir, name)); } catch { /* ignore */ }
+  }
+  try { fs.rmSync(APP, { recursive: true, force: true }); } catch { /* ignore */ }
+  try { fs.rmSync(RUNTIME, { recursive: true, force: true }); } catch { /* ignore */ }
+  if (purge) {
+    try { fs.rmSync(klyviaConfigDir(), { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+  log(green('✓ KLYVIA uninstalled.') + (purge ? dim(' (configuration purged)') : dim(' (configuration kept)')));
+  return true;
+}
+
+function usage() {
+  log(bold('Usage: klyvia [command]\n'));
+  log('  klyvia            start backend + launch the TUI');
+  log('  klyvia start      start the model server (if configured)');
+  log('  klyvia stop       stop services managed by klyvia');
+  log('  klyvia restart    stop + start');
+  log('  klyvia status     show service readiness + active backend');
+  log('  klyvia logs       tail model-server logs');
+  log('  klyvia doctor     run a full diagnostic');
+  log('  klyvia config     show configuration (secrets hidden)');
+  log('  klyvia update     update the app from GitHub (managed installs)');
+  log('  klyvia uninstall  remove KLYVIA (config kept unless --purge)');
+  log('  klyvia help       this message');
+  log('  klyvia --version  print the version');
+  log('');
+  log(dim('`go` and `GO` are aliased to `klyvia`. Run from any directory.'));
+  log(dim('App: ' + APP_ROOT + '  ·  Project: ' + WORK_DIR));
 }
 
 async function main() {
   const arg = process.argv[2] || '';
-  const cfg = buildConfig({ rootDir: ROOT });
+  // buildConfig: rootDir = the user's project (cwd); appRoot = KLYVIA's code.
+  const cfg = buildConfig({ rootDir: WORK_DIR, appRoot: APP_ROOT });
   switch (arg) {
     case '': return cmdTui(cfg);
     case 'start': { const ok = await cmdStart(cfg); process.exit(ok ? 0 : 1); }
@@ -358,7 +622,11 @@ async function main() {
     case 'status': { const ok = await cmdStatus(cfg); process.exit(ok ? 0 : 1); }
     case 'logs': return cmdLogs(cfg);
     case 'doctor': { const ok = await cmdDoctor(cfg); process.exit(ok ? 0 : 1); }
+    case 'config': return cmdConfig(cfg);
+    case 'update': { const ok = await cmdUpdate(cfg); process.exit(ok ? 0 : 1); }
+    case 'uninstall': { const ok = await cmdUninstall(cfg, process.argv.slice(3)); process.exit(ok ? 0 : 1); }
     case '-h': case '--help': case 'help': return usage();
+    case '-v': case '--version': { log('klyvia v' + readVersion()); return; }
     default:
       log(red(`Unknown command: ${arg}`));
       usage();
@@ -373,5 +641,6 @@ if (require.main === module) {
 module.exports = {
   probeEndpoint, startModelServer, stopModelServer, readPid, isProcessAlive,
   runtimeDir, pidFile, logFile, cmdDoctor, cmdStatus, cmdStart, cmdStop,
-  findLlamaBin, buildLlamaStartCommand,
+  findLlamaBin, buildLlamaStartCommand, resolveBackend, welcomeBanner,
+  isManagedInstall, readVersion, cmdConfig, cmdUninstall,
 };

@@ -185,9 +185,12 @@ test('integration: context selection keeps the prompt small and relevant', async
 
 test('integration: skills are selected dynamically, not all loaded per request', async () => {
   // Point the orchestrator at THIS repo (where skills/ lives) explicitly, so
-  // the test is independent of whatever cwd a prior test left behind.
+  // the test is independent of whatever cwd a prior test left behind. Skills
+  // are bundled with the app, so appRoot must also point at the repo.
+  const repo = path.resolve(__dirname, '..');
   const cfg = buildConfig();
-  cfg.rootDir = path.resolve(__dirname, '..');
+  cfg.rootDir = repo;
+  cfg.appRoot = repo;
   const orch = new Orchestrator(cfg);
   const reactSkills = orch.contextSelector.skills.select('build a React component for the UI', 4);
   const sqlSkills = orch.contextSelector.skills.select('design a PostgreSQL schema for users', 4);

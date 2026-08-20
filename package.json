@@ -1,32 +1,39 @@
 {
-  "name": "ai-agent",
-  "version": "0.2.0",
-  "description": "A modular, local-first, open-source AI coding agent.",
+  "name": "klyvia",
+  "version": "0.3.0",
+  "description": "KLYVIA — a local-first, open-source AI coding agent.",
   "main": "index.js",
   "type": "commonjs",
+  "bin": {
+    "klyvia": "./bin/go.js",
+    "go": "./go"
+  },
   "scripts": {
     "start": "node index.js",
     "agent": "node index.js",
     "tui": "node index.js",
+    "klyvia": "node bin/go.js",
     "test": "node --test \"tests/test-*.js\""
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Nabix602/AI-Agent.git"
+    "url": "git+https://github.com/melladomart-del/AI-Agent.git"
   },
   "keywords": [
+    "klyvia",
     "ai",
     "agent",
     "coding-agent",
     "local",
-    "llm"
+    "llm",
+    "llama-cpp"
   ],
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Nabix602/AI-Agent/issues"
+    "url": "https://github.com/melladomart-del/AI-Agent/issues"
   },
-  "homepage": "https://github.com/Nabix602/AI-Agent#readme",
+  "homepage": "https://github.com/melladomart-del/AI-Agent#readme",
   "dependencies": {
     "dotenv": "^17.4.2",
     "openai": "^7.4.0"

@@ -44,6 +44,15 @@ const DEFAULTS = {
   // llama.cpp server context size (-c) and host, used when auto-building.
   LLAMA_CONTEXT: '4096',
   LLAMA_HOST: '127.0.0.1',
+  // --- KLYVIA modes (local / remote / auto) ---
+  // local  : only the local model backend (llama.cpp). Default.
+  // remote : require the future KLYVIA server (KLYVIA_SERVER_URL). If it is
+  //          unreachable, fail hard — do NOT silently fall back to local.
+  // auto   : if a KLYVIA_SERVER_URL is configured AND reachable, use it;
+  //          otherwise fall back to the local backend (and say so in doctor).
+  KLYVIA_MODE: 'auto',
+  KLYVIA_SERVER_URL: '',
+  KLYVIA_API_KEY: '',
 };
 
 function loadEnvFile(rootDir) {
@@ -90,9 +99,26 @@ function projectRoot(startDir) {
   return path.resolve(startDir || process.cwd());
 }
 
+/**
+ * Resolve the KLYVIA app root: where the bundled code, skills, default .env,
+ * and (for dev clones) runtime live. The launcher sets KLYVIA_APP_ROOT so that
+ * a globally-installed `klyvia` can find its own code/skills even when the
+ * user's working directory is an unrelated project. Defaults to rootDir (the
+ * dev-clone case, where app root and project root coincide).
+ */
+function appRoot(rootDir) {
+  if (process.env.KLYVIA_APP_ROOT) return path.resolve(process.env.KLYVIA_APP_ROOT);
+  return rootDir;
+}
+
 function buildConfig(opts = {}) {
+  // rootDir = the user's PROJECT (the thing the agent should read/edit). It is
+  // NOT the install dir. Default: projectRoot(cwd) so `node index.js` from a
+  // project dir targets that project. The launcher passes the user's cwd.
   const root = opts.rootDir || projectRoot();
-  const fromFile = loadEnvFile(root);
+  // appRoot = where KLYVIA's own code/skills/.env live (install dir or dev clone).
+  const app = opts.appRoot || appRoot(root);
+  const fromFile = loadEnvFile(app);
   const get = (k) => process.env[k] ?? fromFile[k] ?? DEFAULTS[k];
   return {
     provider: get('MODEL_PROVIDER'),
@@ -122,6 +148,7 @@ function buildConfig(opts = {}) {
     blockedCommands: toList(get('BLOCKED_COMMANDS')),
     logLevel: get('LOG_LEVEL'),
     rootDir: get('AGENT_ROOT_DIR') || root,
+    appRoot: app,
     runtimeDir: get('RUNTIME_DIR'),
     modelStartCmd: get('MODEL_START_CMD'),
     modelStartArgs: get('MODEL_START_ARGS'),
@@ -129,7 +156,10 @@ function buildConfig(opts = {}) {
     llamaBin: get('LLAMA_BIN'),
     llamaContext: get('LLAMA_CONTEXT'),
     llamaHost: get('LLAMA_HOST'),
+    klyviaMode: String(get('KLYVIA_MODE') || 'auto').toLowerCase(),
+    klyviaServerUrl: get('KLYVIA_SERVER_URL'),
+    klyviaApiKey: get('KLYVIA_API_KEY'),
   };
 }
 
-module.exports = { buildConfig, projectRoot, DEFAULTS };
+module.exports = { buildConfig, projectRoot, appRoot, DEFAULTS };

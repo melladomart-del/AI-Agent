@@ -1,191 +1,277 @@
-# AI-Agent
+# KLYVIA
 
-A modular, local-first, open-source AI coding agent. It understands a
-repository, plans a task, selects relevant context, edits files, runs commands,
-verifies its changes, and corrects itself — designed to run on a low-resource
-local server with an interchangeable local model backend.
+> Local-first AI coding agent.
 
-## Quick start (3 steps)
+[Quick Start](#quick-start) ·
+[Installation](#installation) ·
+[Commands](#commands) ·
+[Configuration](#configuration) ·
+[Local Models](#local-models) ·
+[KLYVIA Server](#klyvia-server) ·
+[Development](#development)
+
+KLYVIA is a modular, open-source AI coding agent that runs on your own
+machine. It understands a repository, plans a task, selects the relevant
+context, edits files, runs commands, verifies its changes, and corrects its own
+mistakes — all driven by a local model you control.
+
+## What You Get
+
+- **Local-first.** Your code and prompts never leave your machine.
+- **One-command install.** `curl … | bash`, then `klyvia` from anywhere.
+- **Global `klyvia` command.** Works from any directory.
+- **Automatic llama.cpp startup.** Set `MODEL_PATH` and KLYVIA starts the server
+  for you, waits for it to be ready, and reaps it on exit.
+- **GGUF model support.** Any small coding model that runs in llama.cpp.
+- **Terminal interface.** A streaming TUI that stays cheap on an old machine.
+- **Local / remote architecture.** `KLYVIA_MODE` switches between a local
+  backend, a future KLYVIA server, or automatic fallback.
+- **Safe by design.** Protected paths, blocked commands, no secrets in code.
+
+## Quick Start
+
+### Install
 
 ```bash
-git clone <repo> && cd AI-Agent
-./install.sh        # installs deps, creates .env, makes `go` available
-go                  # starts the model server (if configured) + launches the TUI
+curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | bash
 ```
 
-Edit `.env` to point at your local model server before the first `go`:
+This clones KLYVIA into `~/.klyvia/app`, installs dependencies, creates a
+config (never overwriting an existing one), and installs the global commands
+`klyvia`, `go`, and `GO` in `~/.local/bin`.
 
+> The distribution branch is **`feat/local-coding-agent`** (verified — that is
+> where the launcher work lives). Override with `KLYVIA_REPO` and
+> `KLYVIA_BRANCH` env vars if you fork.
+
+### Configure
+
+```bash
+klyvia config
 ```
-MODEL_PROVIDER=local
+
+Edit `~/.klyvia/config/config.env` and point KLYVIA at your model:
+
+```env
+KLYVIA_MODE=local
 LOCAL_MODEL_BASE_URL=http://127.0.0.1:8080/v1
-LOCAL_MODEL_NAME=qwen2.5-coder-1.5b-instruct
-# Let `go` start llama.cpp for you (recommended): set the model GGUF and,
-# optionally, the llama binary. If LLAMA_BIN is empty, `go` auto-detects
-# `llama`/`llama-server` on PATH and ~/.local/bin/llama.
-MODEL_PATH=/home/melladomart/models/qwen.gguf
-LLAMA_BIN=/home/melladomart/.local/bin/llama
-# — or, for any other OpenAI-compatible server, use MODEL_START_CMD/MODEL_START_ARGS
+LOCAL_MODEL_NAME=qwen2.5-coder
+MODEL_PATH=/home/you/models/qwen.gguf
+LLAMA_BIN=                 # leave empty to auto-detect ~/.local/bin/llama
+LLAMA_CONTEXT=4096
 ```
 
-`go` then runs `<llama> serve -m <MODEL_PATH> --port <port> --host <host> -c 4096`
-automatically when the endpoint is down, waits for the health probe, and reaps it
-on exit. No machine-specific paths are hardcoded in the code — only in your `.env`.
-
-For one-shot tasks without the TUI:
+### Launch
 
 ```bash
-node index.js "explain the structure of this repo"
-npm test                # run the test suite
+cd ~/projects/my-app
+klyvia
 ```
 
-## The `go` launcher
+KLYVIA starts `llama serve -m <MODEL_PATH> --port 8080 --host 127.0.0.1 -c 4096`,
+waits for the model to be ready, then launches the TUI against **your project**
+(not the install directory). On exit, the model server is stopped cleanly.
 
-`go` is a single command that automates the whole environment. It works from any
-directory (it resolves the project root itself) and manages the model server as a
-service with real health checks — a service is `READY` only after a probe, never
-just because its process exists.
+## Installation
 
-| Command      | Action                                                            |
-|--------------|-------------------------------------------------------------------|
-| `go`         | start services (if down) + launch the TUI                        |
-| `go start`   | start the model server (if `MODEL_START_CMD` is set); no TUI     |
-| `go stop`    | stop services managed by `go`                                    |
-| `go restart` | stop + start                                                      |
-| `go status`  | show service readiness (`READY` / `STARTING` / `STOPPED`)        |
-| `go logs`    | tail the model-server logs                                       |
-| `go doctor`  | diagnose: node, deps, config, endpoint, ports, permissions      |
+### One-command (curl-pipe)
 
-Notes:
+```bash
+curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | bash
+```
 
-- **No double start.** If the endpoint is already reachable, `go` will not
-  spawn a second instance.
-- **Clean shutdown.** `Ctrl-C` during `go` stops the model server `go` started,
-  reaps it, and clears the PID file — no orphans.
-- **No opaque auto-download.** `go` never assumes a binary path or downloads a
-  model. If the endpoint is down and `MODEL_START_CMD` is unset, `go` tells you
-  exactly what is missing. Model files are never committed.
-
-## Model backend
-
-The agent talks to any **OpenAI-compatible** endpoint, so you can use:
-
-- `llama.cpp` server (`/v1`) — the default / target backend
-- LM Studio
-- vLLM
-- Ollama's OpenAI-compatible endpoint (optional compatibility backend; **not required**)
-- a cloud provider as an optional development fallback
-
-Configure via environment variables (see `.env.example`). `LOCAL_MODEL_NAME`
-must match the model id your server exposes (NOT an Ollama `name:tag` with a
-colon). Prefer small coding models that fit limited hardware. The agent has been
-validated end-to-end with **Qwen2.5-Coder-1.5B-Instruct** (Q4_K_M GGUF, ~1.1GB)
-served by `llama.cpp`/`llama-cpp-python`. Do not commit model files; they are
-served by your local backend.
-
-### Small-model hardening
-
-Small local models do not always emit clean OpenAI `tool_calls`: they often put
-the call in prose, use fenced JSON, or get whitespace/escaping wrong in
-`editFile`. The agent handles this without external dependencies:
-
-- `providers/tool-normalize.js` converts native, fenced-JSON, bare-JSON and
-  Hermes-style tool-call formats into canonical `tool_calls`.
-- `tools/files.js` `editFile` matches exactly, then falls back to literal-escape
-  relaxation (`\n` → newline) and whitespace-normalized matching, and returns a
-  file snippet on failure so the model can self-correct.
-- The loop nudges prose-only turns back to tool use, and guards against repeated
-  identical calls.
-
-## Terminal UI (TUI)
-
-`go` (or `node index.js` with no task argument) opens the interactive TUI. It is
-a pure **observer** of the engine's EventBus: it prints a compact, streaming
-transcript of the agent's work as events arrive — no full-screen repaint, no
-heavy TUI framework, so it stays light on an old machine and robust under resize.
-
-On startup it prints the active model/backend/endpoint and probes the model
-server (3 s timeout). If the server is down it shows an actionable banner before
-you type a task, instead of hanging on a connection error.
-
-While the agent works you see, live:
-- the current **phase** (`SELECTING CONTEXT`, `PLANNING`, `EXECUTING`,
-  `VERIFYING`, `CORRECTING`, …) with iteration/tool/error counters;
-- each **tool call** as `▶ toolName  args` and a compact `✓`/`✗` result line
-  (test counts, exit status, file edits, search hits);
-- **verification** and **auto-correction** panels when tests fail;
-- **memory** panels when a relevant past experience is retrieved or a new one
-  is recorded;
-- a final `✓ Task completed successfully` / `✗ Task failed` line.
-
-Interactive commands (type at the `>` prompt):
-
-| Command        | Action                                              |
-|----------------|-----------------------------------------------------|
-| `/help`        | list commands                                       |
-| `/status`      | current task phase + counters                       |
-| `/model`       | active model, backend, endpoint and reachability    |
-| `/tools`       | registered agent tools                              |
-| `/memory`      | recent recorded experiences                         |
-| `/skills [task]` | skills available, with the ones relevant to a task marked |
-| `/clear`       | clear the screen                                    |
-| `/exit`        | quit                                                |
-
-`Ctrl-C` during a running task signals an abort and lets the current step
-finish; at the idle prompt it exits. Output is colour when writing to a TTY and
-plain text otherwise (respects `NO_COLOR`), so the same code is readable in CI
-logs.
-
-## Architecture
-
-See `docs/ARCHITECTURE.md` for the full design and the rationale for which
-open-source coding-agent concepts were adopted (OpenHands, Aider, OpenCode) and
-how they integrate with this project's own systems.
+Installs into `~/.klyvia/`:
 
 ```
-User → go → TUI/index.js → Orchestrator → Agent (action/observation loop)
-        │                       │
-        │   ┌───────────────────┼─────────────────────┐
-        │   │                   │                     │
-        │  ContextSelector  ModelRouter           ToolRegistry
-        │   (repo map,       (local/cloud,          (files, git,
-        │     skills,         OpenAI-compat)        shell, tests)
-        │     memory)
-        │                       │
-        │                 Verification → Corrector → Memory/Experience
+~/.klyvia/
+├── app/          # the KLYVIA code (git clone)
+├── config/       # config.env — survives updates
+└── runtime/      # pid + logs (gitignored, ephemeral)
+```
+
+Global commands are symlinked into `~/.local/bin`:
+
+```
+~/.local/bin/klyvia   ~/.local/bin/go   ~/.local/bin/GO
+```
+
+If `~/.local/bin` is not on your `PATH`, the installer prints the exact line
+to add to your shell profile.
+
+### From a clone (developers)
+
+```bash
+git clone https://github.com/melladomart-del/AI-Agent.git
+cd AI-Agent
+./install.sh
+```
+
+In this mode KLYVIA runs from the clone itself; config lives in the repo's
+`.env`. Useful for development.
+
+### Update
+
+```bash
+klyvia update
+```
+
+Pulls the latest code from GitHub, reinstalls dependencies, and **preserves
+your configuration**. Only works on managed installs (`~/.klyvia/app`); for a
+dev clone it tells you to `git pull` manually.
+
+### Uninstall
+
+```bash
+klyvia uninstall            # prompts for confirmation
+klyvia uninstall --yes      # no prompt
+klyvia uninstall --purge    # also removes your configuration
+```
+
+By default KLYVIA removes the app code, runtime, and global symlinks, but
+**keeps your configuration, your models, and llama.cpp**. Use `--purge` to also
+remove the configuration.
+
+## Commands
+
+```
+klyvia            start the backend + launch the TUI
+klyvia start      start the model server (if configured)
+klyvia stop       stop services managed by klyvia
+klyvia restart    stop + start
+klyvia status     show service readiness + active backend
+klyvia logs       tail model-server logs
+klyvia doctor     run a full diagnostic
+klyvia config     show configuration (secrets masked)
+klyvia update     update the app from GitHub (managed installs)
+klyvia uninstall  remove KLYVIA (config kept unless --purge)
+klyvia help       show usage
+klyvia --version  print the version
+```
+
+`go` and `GO` are aliased to `klyvia` and accept the same subcommands. All
+commands work from any directory.
+
+## Configuration
+
+KLYVIA reads configuration from (in priority order): environment variables, the
+config file (`~/.klyvia/config/config.env` for managed installs, `.env` for dev
+clones), then built-in defaults. Run `klyvia config` to see the resolved values
+(secrets are masked, never printed in full).
+
+Key variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `KLYVIA_MODE` | `auto` | `local` / `remote` / `auto` (see [KLYVIA Server](#klyvia-server)) |
+| `LOCAL_MODEL_BASE_URL` | `http://127.0.0.1:8080/v1` | Local model server endpoint (OpenAI-compatible) |
+| `LOCAL_MODEL_NAME` | `qwen2.5-coder-1.5b-instruct` | Model id exactly as the server exposes it |
+| `MODEL_PATH` | _(empty)_ | Path to your `.gguf` — enables auto-start |
+| `LLAMA_BIN` | _(auto-detect)_ | Path to the llama.cpp binary |
+| `LLAMA_CONTEXT` | `4096` | Context size passed to `llama serve -c` |
+| `LLAMA_HOST` | `127.0.0.1` | Host passed to `llama serve --host` |
+| `KLYVIA_SERVER_URL` | _(empty)_ | Future KLYVIA server URL (remote mode) |
+| `KLYVIA_API_KEY` | _(empty)_ | API key for the KLYVIA server (masked in output) |
+
+## Local Models
+
+KLYVIA speaks the OpenAI HTTP API, so any OpenAI-compatible local server works
+(llama.cpp, LM Studio, vLLM, …). The default and recommended backend is
+**llama.cpp**, served on `http://127.0.0.1:8080/v1`.
+
+### Automatic startup
+
+Set `MODEL_PATH` to your `.gguf` file and KLYVIA builds and runs:
+
+```bash
+llama serve -m /home/you/models/qwen.gguf --port 8080 --host 127.0.0.1 -c 4096
+```
+
+It waits for `/v1/models` to respond before launching the TUI, prevents a
+second instance if the endpoint is already up, and stops the server cleanly
+(SIGTERM, then SIGKILL if needed) when the TUI exits. No orphan processes.
+
+### Recommended small models
+
+For a low-resource machine (4 CPUs, ~6 GB RAM, no GPU), use a small coding
+model such as **Qwen2.5-Coder-1.5B-Instruct** (Q4_K_M GGUF, ~1.1 GB), which
+runs end-to-end on modest hardware. Download GGUF files out of band — KLYVIA
+never downloads model weights.
+
+### Custom server
+
+If you use a different server (or want full control over the start command),
+set `MODEL_START_CMD` and `MODEL_START_ARGS` instead of `MODEL_PATH`.
+
+## KLYVIA Server
+
+KLYVIA supports three modes via `KLYVIA_MODE`:
+
+- **`local`** — only the local backend (llama.cpp). Default for local-first use.
+- **`remote`** — require the future KLYVIA server (`KLYVIA_SERVER_URL`). If it
+  is unreachable, KLYVIA **fails hard** and does not silently fall back to the
+  local backend.
+- **`auto`** (default) — if `KLYVIA_SERVER_URL` is configured and reachable,
+  use it; otherwise fall back to the local backend, and say so in `klyvia doctor`.
+
+```
+KLYVIA_SERVER_URL configured?
         │
-        └── manages model server: PID file + health probe, no orphans
+       YES
+        │
+        ▼
+   reachable?
+    │      │
+   YES    NO
+    │      │
+    ▼      ▼
+ remote  local (auto fallback)
 ```
 
-## Layout
+The KLYVIA server protocol is not yet finalized; the abstraction is in place so
+a remote backend can be added without changing the agent loop.
+
+## Development
+
+```bash
+git clone https://github.com/melladomart-del/AI-Agent.git
+cd AI-Agent
+npm install
+npm test                # node --test tests/test-*.js
+node index.js "task"    # one-shot mode
+node index.js           # interactive TUI
+```
+
+### Architecture
 
 ```
-go, bin/go.js            the `go` launcher + service manager
-install.sh               one-command setup (deps, .env, `go` on PATH)
-index.js                 entry point (one-shot task or TUI)
-src/
-  config.js              env-based config; resolves project root
-  providers/             OpenAI-compatible model abstraction + router
-  engine/
-    agent.js             autonomous action/observation loop
-    orchestrator.js      wires all subsystems together
-    planner.js           architect-phase planning
-    context-selector.js  repo map + skills + experiences
-    repo-analyzer.js     token-budgeted symbol repo map (Aider-style)
-    skill-registry.js    relevance-based skill loading
-    memory.js            persistent operational memory + experience retrieval
-    verification.js      objective test/command verification
-    corrector.js         failure → diagnose → fix → re-verify
-    safety.js            protected paths + blocked commands
-    event-bus.js         decoupled eventing
-  tools/
-    tool.js, registry.js tool base + registry + safety dispatch
-    files.js             file/search/shell/git/test/finish tools
-  tui/tui.js             interactive terminal UI
-  util/minimatch.js      tiny glob matcher
-skills/                  curated, de-duplicated skills (loaded dynamically)
-tests/                   node:test suite (incl. launcher + provider routing)
+USER → TUI → Orchestrator → {Planner, ContextSelector, Memory, Skills}
+                                  ↓
+                            Model Layer (OpenAI-compatible)
+                                  ↓
+                         Tools {Files, Terminal, Git}
+                                  ↓
+                       Verification → Auto-correction → Memory
+```
+
+- **`bin/go.js`** — the `klyvia`/`go` launcher and service manager.
+- **`src/engine/`** — orchestrator, planner, context-selector, verification,
+  corrector, memory, agent, event-bus, skill-registry, repo-analyzer, safety.
+- **`src/providers/`** — provider-agnostic model layer + router.
+- **`src/tools/`** — file, terminal, git tools with a safety guard.
+- **`src/tui/`** — streaming terminal UI (pure observer of the event bus).
+- **`skills/`** — bundled markdown skills, loaded dynamically per task.
+
+`rootDir` (the user's project) and `appRoot` (KLYVIA's code) are separate, so a
+global `klyvia` targets the project you are in, not its own install directory.
+Memory is per-project; skills are bundled with the app.
+
+### Tests
+
+```bash
+npm test                 # 140 tests, 0 fail (4 live-gated, skipped)
+AI_AGENT_LIVE=1 npm test # includes live model-endpoint tests
 ```
 
 ## License
 
-MIT
+MIT. No model weights are included; bring your own GGUF.

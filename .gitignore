@@ -13,3 +13,7 @@ models/
 
 # Runtime state managed by the `go` launcher (PID files, logs).
 .agent-runtime/
+
+# Managed install home (~/.klyvia) — never version-controlled.
+# (Only relevant if the repo is cloned there; listed for safety.)
+.klyvia/

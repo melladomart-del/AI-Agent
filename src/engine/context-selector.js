@@ -14,7 +14,11 @@ class ContextSelector {
   constructor(config, memory) {
     this.config = config;
     this.repoAnalyzer = new RepoAnalyzer(config.rootDir);
-    this.skills = new SkillRegistry(path.join(config.rootDir, 'skills'));
+    // Skills are KLYVIA's bundled capabilities — they live with the app code
+    // (appRoot), not in the user's project. Memory and the repo map, however,
+    // are per-project (rootDir) so each project keeps its own experiences.
+    const skillsDir = config.appRoot ? path.join(config.appRoot, 'skills') : path.join(config.rootDir, 'skills');
+    this.skills = new SkillRegistry(skillsDir);
     // Share the orchestrator's Memory instance when provided so that experiences
     // recorded during a run are immediately visible to retrieval. Falling back to
     // a new instance keeps the selector usable standalone.
