@@ -143,19 +143,24 @@ test('doctor flags an unreachable endpoint and exits non-zero (ok=false)', async
   }
 });
 
-test('doctor passes (ok=true) when node, deps, config and endpoint are all good', async () => {
+test('doctor passes (ok=true) when node, deps, config, endpoint, llama and model are all good', async () => {
   const srv = makeHealthyServer();
   const port = await startServer(srv);
+  const fakeModel = path.join(os.tmpdir(), `go-doc-model-${process.pid}.gguf`);
+  fs.writeFileSync(fakeModel, 'dummy');
   const write = process.stdout.write.bind(process.stdout);
   process.stdout.write = () => true;
   try {
     const cfg = cfgFor(`http://127.0.0.1:${port}/v1`);
+    cfg.llamaBin = process.execPath; // a real executable on disk
+    cfg.modelPath = fakeModel;       // a real file on disk
     resetRuntime(cfg);
     const ok = await go.cmdDoctor(cfg);
     assert.equal(ok, true, 'doctor must pass when everything is healthy');
   } finally {
     process.stdout.write = write;
     srv.close();
+    try { fs.unlinkSync(fakeModel); } catch { /* ignore */ }
     resetRuntime(cfgFor('http://127.0.0.1:0/v1'));
   }
 });
@@ -189,4 +194,40 @@ test('double-start does not spawn a second instance when the endpoint is already
     assert.equal(second.ready, true);
     resetRuntime(cfg);
   } finally { srv.close(); }
+});
+
+test('buildLlamaStartCommand builds serve args from LLAMA_BIN + MODEL_PATH + endpoint port', () => {
+  // Use the node binary as a stand-in for "llama" and a temp file for the model.
+  const fakeModel = path.join(os.tmpdir(), `go-fake-model-${process.pid}.gguf`);
+  fs.writeFileSync(fakeModel, 'dummy');
+  try {
+    const cfg = cfgFor('http://127.0.0.1:8080/v1');
+    cfg.llamaBin = process.execPath; // any executable on disk
+    cfg.modelPath = fakeModel;
+    cfg.llamaContext = '4096';
+    const built = go.buildLlamaStartCommand(cfg);
+    assert.ok(built, 'must build a command when both llama bin and model file exist');
+    assert.equal(built.bin, process.execPath);
+    assert.deepEqual(built.args, ['serve', '-m', fakeModel, '--port', '8080', '--host', '127.0.0.1', '-c', '4096']);
+  } finally { try { fs.unlinkSync(fakeModel); } catch { /* ignore */ } }
+});
+
+test('buildLlamaStartCommand returns null when the model file is missing', () => {
+  const cfg = cfgFor('http://127.0.0.1:8080/v1');
+  cfg.llamaBin = process.execPath;
+  cfg.modelPath = '/nonexistent/path/to/model.gguf';
+  const built = go.buildLlamaStartCommand(cfg);
+  assert.equal(built, null, 'must not build a command when the model file does not exist');
+});
+
+test('startModelServer with MODEL_PATH (missing file) and a dead endpoint gives a clear error mentioning MODEL_PATH', async () => {
+  const cfg = cfgFor('http://127.0.0.1:65535/v1');
+  cfg.llamaBin = process.execPath; // llama found, but model file missing
+  cfg.modelPath = '/nonexistent/model.gguf';
+  resetRuntime(cfg);
+  const res = await go.startModelServer(cfg);
+  assert.equal(res.ready, false);
+  assert.equal(res.alive, false);
+  assert.match(res.error, /MODEL_PATH/, 'error must guide the user to set MODEL_PATH');
+  resetRuntime(cfg);
 });

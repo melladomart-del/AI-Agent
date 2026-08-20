@@ -19,10 +19,17 @@ Edit `.env` to point at your local model server before the first `go`:
 MODEL_PROVIDER=local
 LOCAL_MODEL_BASE_URL=http://127.0.0.1:8080/v1
 LOCAL_MODEL_NAME=qwen2.5-coder-1.5b-instruct
-# Optional: let `go` start your model server for you
-MODEL_START_CMD=/opt/llama.cpp/build/bin/llama-server
-MODEL_START_ARGS=--model /path/to/model.gguf --port 8080 --host 127.0.0.1
+# Let `go` start llama.cpp for you (recommended): set the model GGUF and,
+# optionally, the llama binary. If LLAMA_BIN is empty, `go` auto-detects
+# `llama`/`llama-server` on PATH and ~/.local/bin/llama.
+MODEL_PATH=/home/melladomart/models/qwen.gguf
+LLAMA_BIN=/home/melladomart/.local/bin/llama
+# — or, for any other OpenAI-compatible server, use MODEL_START_CMD/MODEL_START_ARGS
 ```
+
+`go` then runs `<llama> serve -m <MODEL_PATH> --port <port> --host <host> -c 4096`
+automatically when the endpoint is down, waits for the health probe, and reaps it
+on exit. No machine-specific paths are hardcoded in the code — only in your `.env`.
 
 For one-shot tasks without the TUI:
 

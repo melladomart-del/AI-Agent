@@ -102,8 +102,55 @@ function cmdArgs(str) {
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 /**
- * Start the model server (only if MODEL_START_CMD is set and the endpoint is
- * not already reachable). Resolves to { started, ready, alive, error? }.
+ * Find the llama.cpp server binary: explicit LLAMA_BIN, then PATH lookup for
+ * `llama` and `llama-server`, then ~/.local/bin/llama (a common manual install
+ * location). Returns the resolved path or null. Never assumes a path exists.
+ */
+function findLlamaBin(cfg) {
+  const { execSync } = require('child_process');
+  const tryPath = (p) => { try { if (p && fs.existsSync(p) && fs.accessSync(p, fs.constants.X_OK) === undefined) return p; } catch { /* ignore */ } return null; };
+  if (cfg.llamaBin) {
+    const found = tryPath(cfg.llamaBin);
+    if (found) return found;
+  }
+  for (const name of ['llama', 'llama-server']) {
+    try {
+      const out = execSync(`command -v ${name} 2>/dev/null || true`, { encoding: 'utf-8', stdio: 'pipe' }).trim();
+      if (out && fs.existsSync(out)) return out;
+    } catch { /* ignore */ }
+  }
+  const homeLocal = path.join(process.env.HOME || '', '.local', 'bin', 'llama');
+  return tryPath(homeLocal);
+}
+
+/**
+ * Build a llama.cpp `serve` command from LLAMA_BIN + MODEL_PATH, deriving host
+ * and port from LOCAL_MODEL_BASE_URL. Returns { bin, args } or null if either
+ * the binary or the model file is missing.
+ */
+function buildLlamaStartCommand(cfg) {
+  const bin = findLlamaBin(cfg);
+  if (!bin) return null;
+  const model = cfg.modelPath;
+  if (!model || !fs.existsSync(model)) return null;
+  let port = '8080';
+  let host = cfg.llamaHost || '127.0.0.1';
+  try {
+    const u = new URL(cfg.local.baseUrl);
+    if (u.port) port = u.port;
+    if (u.hostname) host = u.hostname;
+  } catch { /* keep defaults */ }
+  const args = ['serve', '-m', model, '--port', port, '--host', host, '-c', String(cfg.llamaContext || '4096')];
+  return { bin, args };
+}
+
+/**
+ * Start the model server when the endpoint is not already reachable. The start
+ * command is resolved in this order:
+ *   1. explicit MODEL_START_CMD + MODEL_START_ARGS (any server, full control)
+ *   2. auto-built llama.cpp command from LLAMA_BIN (or PATH/~.local/bin/llama)
+ *      + MODEL_PATH (.gguf), deriving host/port from LOCAL_MODEL_BASE_URL
+ * Resolves to { started, ready, alive, error? }.
  */
 async function startModelServer(cfg) {
   const probe = await probeEndpoint(cfg.local.baseUrl);
@@ -114,16 +161,31 @@ async function startModelServer(cfg) {
     return { started: false, ready: false, alive: true, error: 'model process running but endpoint not responding (still warming up?)' };
   }
 
-  if (!cfg.modelStartCmd) {
-    return {
-      started: false, ready: false, alive: false,
-      error: `endpoint ${cfg.local.baseUrl} is not reachable and no MODEL_START_CMD is configured.\n` +
-        `Start your local model server (e.g. llama-server, LM Studio) pointing at ${cfg.local.baseUrl}, or set MODEL_START_CMD in .env so 'go' can start it for you.`,
-    };
+  // Resolve the start command: explicit MODEL_START_CMD first, otherwise the
+  // llama.cpp auto-build from LLAMA_BIN + MODEL_PATH (when both are available).
+  let bin = cfg.modelStartCmd;
+  let args = cmdArgs(cfg.modelStartArgs);
+  if (!bin) {
+    const built = buildLlamaStartCommand(cfg);
+    if (built) { bin = built.bin; args = built.args; }
   }
 
-  const bin = cfg.modelStartCmd;
-  const args = cmdArgs(cfg.modelStartArgs);
+  if (!bin) {
+    const llamaBin = findLlamaBin(cfg);
+    const modelMissing = !cfg.modelPath || !fs.existsSync(cfg.modelPath);
+    let hint;
+    if (llamaBin && modelMissing) {
+      hint = `endpoint ${cfg.local.baseUrl} is not reachable. llama.cpp was found at ${llamaBin}, but no MODEL_PATH (.gguf) is configured (or the file is missing). Set MODEL_PATH in .env to your model file.`;
+    } else if (!llamaBin && modelMissing) {
+      hint = `endpoint ${cfg.local.baseUrl} is not reachable and neither MODEL_START_CMD nor (LLAMA_BIN + MODEL_PATH) is configured.\nInstall llama.cpp, set MODEL_PATH to your .gguf, or set MODEL_START_CMD in .env.`;
+    } else if (!llamaBin) {
+      hint = `endpoint ${cfg.local.baseUrl} is not reachable. MODEL_PATH is set but llama.cpp was not found on PATH or ~/.local/bin/llama. Set LLAMA_BIN in .env to your llama binary.`;
+    } else {
+      hint = `endpoint ${cfg.local.baseUrl} is not reachable. Set MODEL_START_CMD (or LLAMA_BIN + MODEL_PATH) in .env so 'go' can start your model server.`;
+    }
+    return { started: false, ready: false, alive: false, error: hint };
+  }
+
   const out = fs.openSync(logFile(cfg), 'a');
   const err = fs.openSync(logFile(cfg), 'a');
   const child = spawn(bin, args, { stdio: ['ignore', out, err], detached: true, cwd: cfg.rootDir });
@@ -241,7 +303,13 @@ async function cmdDoctor(cfg) {
   check('model endpoint reachable', probe.ok, probe.ok ? '' : (probe.error || 'no response'));
   check('model name set', !!cfg.local.model, cfg.local.model || '(empty)');
   if (cfg.modelStartCmd) check('MODEL_START_CMD set', true, cfg.modelStartCmd);
-  else check('MODEL_START_CMD (optional)', true, dim('not set — start your model server manually'));
+  else {
+    const llamaBin = findLlamaBin(cfg);
+    check('llama.cpp binary', !!llamaBin, llamaBin ? llamaBin : 'not found on PATH or ~/.local/bin/llama (set LLAMA_BIN)');
+    const modelExists = cfg.modelPath && fs.existsSync(cfg.modelPath);
+    check('model file (MODEL_PATH)', !!modelExists, modelExists ? cfg.modelPath : (cfg.modelPath ? `${cfg.modelPath} (missing!)` : 'not set (set MODEL_PATH to your .gguf)'));
+    if (llamaBin && modelExists) check('auto-start ready', true, dim('go can start llama.cpp for you'));
+  }
   check('safety guard configured', cfg.protectedPaths.length > 0, `${cfg.protectedPaths.length} protected patterns`);
   if (String(port) === '11434') log(yellow('•') + dim(' note: port 11434 is Ollama; fine only if intended'));
 
@@ -305,4 +373,5 @@ if (require.main === module) {
 module.exports = {
   probeEndpoint, startModelServer, stopModelServer, readPid, isProcessAlive,
   runtimeDir, pidFile, logFile, cmdDoctor, cmdStatus, cmdStart, cmdStop,
+  findLlamaBin, buildLlamaStartCommand,
 };

@@ -11,15 +11,19 @@ local server.
   TUI entry point is `node index.js` (one-shot: `node index.js "task"`). There
   is NO `tui/index.mjs` file; the documented entry is `package.json` `scripts.tui`
   = `node index.js`. `agent.js` is a backward-compatible shim to `index.js`.
-- **Launcher**: `go` (repo-root wrapper) → `bin/go.js` is the service manager.
+- **Launcher**: `go` / `GO` (repo-root wrapper) → `bin/go.js` is the service manager.
   Subcommands: `go` (start + TUI), `go start|stop|restart|status|logs|doctor`.
-  It resolves the project root itself (works from any dir), uses a real health
-  probe (`/v1/models`) — a service is READY only after the probe passes, never
-  just because a PID exists — and prevents double-starts via a PID file under
-  `.agent-runtime/` (gitignored). `MODEL_START_CMD`/`MODEL_START_ARGS` (env)
-  optionally let `go` spawn the model server; otherwise `go` only probes and
-  reports what's missing. `install.sh` sets up deps + `.env` + a global `go`
-  symlink in `~/.local/bin`.
+  `GO` (uppercase) works too (install.sh symlinks both into ~/.local/bin; Linux
+  is case-sensitive). It resolves the project root itself (works from any dir),
+  uses a real health probe (`/v1/models`) — a service is READY only after the
+  probe passes, never just because a PID exists — and prevents double-starts via
+  a PID file under `.agent-runtime/` (gitignored). Start-command resolution:
+  (1) `MODEL_START_CMD`+`MODEL_START_ARGS` (any server, full control), or
+  (2) llama.cpp auto-build from `LLAMA_BIN` (or auto-detected
+  `llama`/`llama-server`/`~/.local/bin/llama`) + `MODEL_PATH` (.gguf), deriving
+  host/port from `LOCAL_MODEL_BASE_URL` and context from `LLAMA_CONTEXT`.
+  `install.sh` sets up deps + `.env` + global `go`/`GO` symlinks in
+  `~/.local/bin`, detects llama.cpp, and runs `go doctor`.
 - Stack: Node.js (CommonJS). Runtime deps: only `openai` + `dotenv`. Tests use
   the built-in `node:test` runner (`node --test tests/`). **Do not add heavy
   runtime or test dependencies.**

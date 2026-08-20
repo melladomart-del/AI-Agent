@@ -35,6 +35,15 @@ const DEFAULTS = {
   RUNTIME_DIR: '.agent-runtime',
   MODEL_START_CMD: '',
   MODEL_START_ARGS: '',
+  // When MODEL_START_CMD is empty, `go` can still auto-start the model server
+  // if LLAMA_BIN (or an auto-detected `llama`/`llama-server` on PATH /
+  // ~/.local/bin/llama) AND MODEL_PATH (a .gguf file) are available. The start
+  // command is then built as: <llama> serve -m <model> --port <port> -c <ctx>.
+  MODEL_PATH: '',
+  LLAMA_BIN: '',
+  // llama.cpp server context size (-c) and host, used when auto-building.
+  LLAMA_CONTEXT: '4096',
+  LLAMA_HOST: '127.0.0.1',
 };
 
 function loadEnvFile(rootDir) {
@@ -116,6 +125,10 @@ function buildConfig(opts = {}) {
     runtimeDir: get('RUNTIME_DIR'),
     modelStartCmd: get('MODEL_START_CMD'),
     modelStartArgs: get('MODEL_START_ARGS'),
+    modelPath: get('MODEL_PATH'),
+    llamaBin: get('LLAMA_BIN'),
+    llamaContext: get('LLAMA_CONTEXT'),
+    llamaHost: get('LLAMA_HOST'),
   };
 }
 

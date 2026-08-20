@@ -56,17 +56,50 @@ green "Launcher ready: ./go"
 step "Making 'go' available globally"
 BIN_DIR="${HOME}/.local/bin"
 mkdir -p "$BIN_DIR"
+# Create both lowercase `go` and uppercase `GO` symlinks (Linux filesystems are
+# case-sensitive, so `GO` needs its own entry) — both point at the wrapper.
 ln -sf "${PROJECT_DIR}/go" "${BIN_DIR}/go"
+ln -sf "${PROJECT_DIR}/go" "${BIN_DIR}/GO"
 if echo ":${PATH}:" | grep -q ":${BIN_DIR}:"; then
-  green "'go' is on your PATH at ${BIN_DIR}/go"
+  green "'go' and 'GO' are on your PATH at ${BIN_DIR}"
 else
-  yellow "Symlinked ${BIN_DIR}/go, but ${BIN_DIR} is not on your PATH."
+  yellow "Symlinked ${BIN_DIR}/go and ${BIN_DIR}/GO, but ${BIN_DIR} is not on your PATH."
   yellow "Add this line to your shell profile (~/.bashrc or ~/.zshrc) and restart your shell:"
   printf '    export PATH="${HOME}/.local/bin:${PATH}"\n'
 fi
 
+step "Detecting llama.cpp (optional, for auto-start)"
+LLAMA_FOUND=""
+for cand in llama llama-server; do
+  if command -v "$cand" >/dev/null 2>&1; then LLAMA_FOUND="$(command -v "$cand")"; break; fi
+done
+if [ -z "$LLAMA_FOUND" ] && [ -x "${HOME}/.local/bin/llama" ]; then
+  LLAMA_FOUND="${HOME}/.local/bin/llama"
+fi
+if [ -n "$LLAMA_FOUND" ]; then
+  green "Found llama.cpp at ${LLAMA_FOUND}"
+  green "  Set MODEL_PATH in .env to your .gguf and 'go' will start the server for you."
+else
+  yellow "llama.cpp not found on PATH or ~/.local/bin/llama."
+  yellow "  (Optional) install llama.cpp, or set MODEL_START_CMD in .env to point at any OpenAI-compatible server."
+fi
+
+step "Diagnostic"
+# `go doctor` exits non-zero when the model endpoint is down, which is expected
+# before .env is edited. Run it non-fatally (set -e is active) and report.
+set +e
+./go doctor
+DOCTOR_RC=$?
+set -e
+if [ "$DOCTOR_RC" -eq 0 ]; then
+  green "Doctor passed."
+else
+  yellow "Doctor reported issues above — expected before you edit .env (model endpoint, model file). Fix them and run 'go doctor' again."
+fi
+
 green ""
 green "Installation complete."
-printf 'Next: edit .env to point at your local model server (LOCAL_MODEL_BASE_URL, MODEL_START_CMD), then run:\n'
+printf 'Next: edit .env (MODEL_PATH + LOCAL_MODEL_BASE_URL), then run:\n'
 printf '    go            # start services + launch the TUI\n'
+printf '    GO            # same, uppercase\n'
 printf '    go doctor     # verify the setup\n'
