@@ -315,10 +315,13 @@ test('cmdConfig masks API keys and never prints them in full', async () => {
 test('welcomeBanner renders a KLYVIA box with backend + status', () => {
   const cfg = cfgFor('http://127.0.0.1:8080/v1');
   cfg.local.model = 'qwen2.5-coder';
+  cfg.rootDir = '/tmp/my-user-project';
   const banner = go.welcomeBanner(cfg, { backend: 'local' }, { ok: true });
   assert.match(banner, /K L Y V I A/i);
   assert.match(banner, /llama\.cpp/);
   assert.match(banner, /qwen2\.5-coder/);
+  // The banner must show the USER's project (rootDir), not the app install dir.
+  assert.match(banner, /Project.*\/tmp\/my-user-project/, 'banner shows the user project path');
   // A boxed banner has top and bottom borders.
   assert.match(banner, /╭[─]+╮/);
   assert.match(banner, /╰[─]+╯/);

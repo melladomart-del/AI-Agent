@@ -1,9 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # KLYVIA installer — installs KLYVIA globally so `klyvia` works from any dir.
+#
+# POSIX sh compatible: works with `curl … | sh` (dash/ash/bash) and `./install.sh`.
 #
 # Two modes:
 #   1. curl-pipe (no existing clone):
-#        curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | bash
+#        curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | sh
 #      → clones into ~/.klyvia/app and installs global commands.
 #   2. from a repo clone:
 #        git clone <repo> && cd AI-Agent && ./install.sh
@@ -37,11 +39,14 @@ yellow() { printf '\033[33m%s\033[0m\n' "$1"; }
 red() { printf '\033[31m%s\033[0m\n' "$1"; }
 step() { printf '\n==> %s\n' "$1"; }
 
-# Detect whether this script is running from a real repo clone (BASH_SOURCE is a
-# file on disk inside a git repo) vs. curl-pipe (no BASH_SOURCE / not a repo).
+# Detect whether this script is running from a real repo clone vs. curl-pipe.
+# Under curl-pipe, $0 is "sh" and there is no script file on disk; under a
+# clone, $0 is the script path (e.g. ./install.sh). Use a path that exists and
+# contains package.json to decide in-place mode. Bash's BASH_SOURCE is avoided
+# so plain `sh` (dash/ash) works for `curl … | sh`.
 SCRIPT_PATH=""
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-  SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -n "${0:-}" ] && [ -f "${0}" ]; then
+  SCRIPT_PATH="$(cd "$(dirname "${0}")" && pwd)"
 fi
 IN_PLACE=0
 if [ -n "$SCRIPT_PATH" ] && [ -f "${SCRIPT_PATH}/package.json" ]; then

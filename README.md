@@ -18,7 +18,7 @@ mistakes — all driven by a local model you control.
 ## What You Get
 
 - **Local-first.** Your code and prompts never leave your machine.
-- **One-command install.** `curl … | bash`, then `klyvia` from anywhere.
+- **One-command install.** `curl … | sh`, then `klyvia` from anywhere.
 - **Global `klyvia` command.** Works from any directory.
 - **Automatic llama.cpp startup.** Set `MODEL_PATH` and KLYVIA starts the server
   for you, waits for it to be ready, and reaps it on exit.
@@ -33,7 +33,7 @@ mistakes — all driven by a local model you control.
 ### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | sh
 ```
 
 This clones KLYVIA into `~/.klyvia/app`, installs dependencies, creates a
@@ -77,7 +77,7 @@ waits for the model to be ready, then launches the TUI against **your project**
 ### One-command (curl-pipe)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/melladomart-del/AI-Agent/feat/local-coding-agent/install.sh | sh
 ```
 
 Installs into `~/.klyvia/`:

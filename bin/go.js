@@ -280,6 +280,7 @@ function welcomeBanner(cfg, backend, probe) {
     : (backend.backend === 'remote' ? red('● DISCONNECTED') : yellow('○ STARTING'));
   const lines = [
     `${bold(c('cyan', 'K L Y V I A'))}  ${dim('· local AI coding agent')}`,
+    `${dim('Project')}  ${cfg.rootDir}`,
     `${dim('Backend')}  ${backendLabel}`,
     `${dim('Model')}    ${model}`,
     `${dim('Status')}   ${status}`,

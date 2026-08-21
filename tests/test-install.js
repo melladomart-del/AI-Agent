@@ -43,3 +43,35 @@ test('install.sh (in-place) is idempotent: preserves an existing .env and create
   }
 });
 
+/**
+ * POSIX `sh` (dash) compatibility: the documented install command is
+ * `curl … | sh`. When the script is piped via stdin, $0 is "sh" (not a file),
+ * so the installer must take the curl-pipe path and NOT abort on a bash-only
+ * substitution. We simulate the pipe by feeding the script to `sh` on stdin,
+ * with a throwaway HOME. The clone step needs network, so we only assert the
+ * script reaches the clone step (prints "Installing KLYVIA") rather than
+ * crashing with "Bad substitution" before it.
+ */
+test('install.sh is POSIX sh compatible: `curl … | sh` does not crash on bash-only syntax', () => {
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'klyvia-sh-'));
+  const binDir = path.join(tmpHome, '.local', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const script = fs.readFileSync(path.join(REPO, 'install.sh'), 'utf-8');
+  const env = { ...process.env, HOME: tmpHome, PATH: `${binDir}:${process.env.PATH}` };
+  let out = '';
+  try {
+    // Pipe the script to `sh` (the real /bin/sh — dash on this host).
+    const { spawnSync } = require('child_process');
+    const res = spawnSync('sh', [], { input: script, env, encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024 });
+    out = res.stdout + res.stderr;
+    // The critical assertion: no "Bad substitution" (the dash error for
+    // bash-only ${BASH_SOURCE[0]}). And it must reach the clone step.
+    assert.doesNotMatch(out, /Bad substitution/, 'install.sh must not use bash-only syntax under plain sh');
+    assert.match(out, /Installing KLYVIA into/, 'curl-pipe mode reached the clone step');
+    assert.equal(res.status, 0, 'install.sh exits 0 even if the model endpoint is down');
+  } finally {
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+});
+
+
